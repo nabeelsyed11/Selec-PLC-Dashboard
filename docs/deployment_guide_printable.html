@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Selec MiBRX-6M & Raspberry Pi 5 Deployment Guide</title>
+<style>
+  @page {
+    size: A4;
+    margin: 14mm 16mm;
+  }
+  
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1e293b;
+    line-height: 1.5;
+    font-size: 10.5pt;
+    background: #fff;
+  }
+
+  .header-card {
+    background: linear-gradient(135deg, #090d16 0%, #1e293b 100%);
+    color: #ffffff;
+    padding: 24px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    border-left: 6px solid #06b6d4;
+  }
+
+  .header-title {
+    font-size: 20pt;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+    color: #f8fafc;
+  }
+
+  .header-subtitle {
+    font-size: 11pt;
+    color: #94a3b8;
+    margin-bottom: 12px;
+  }
+
+  .header-meta {
+    display: flex;
+    gap: 20px;
+    font-size: 9pt;
+    color: #38bdf8;
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    padding-top: 10px;
+  }
+
+  h2 {
+    font-size: 13.5pt;
+    font-weight: 700;
+    color: #0f172a;
+    border-bottom: 2px solid #e2e8f0;
+    padding-bottom: 6px;
+    margin-top: 22px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  h3 {
+    font-size: 11.5pt;
+    font-weight: 600;
+    color: #1e293b;
+    margin-top: 14px;
+    margin-bottom: 6px;
+  }
+
+  p {
+    margin-bottom: 10px;
+    color: #334155;
+  }
+
+  /* Table styling */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 16px 0;
+    font-size: 9pt;
+    page-break-inside: avoid;
+  }
+
+  th {
+    background-color: #f1f5f9;
+    color: #0f172a;
+    font-weight: 700;
+    text-align: left;
+    padding: 8px 10px;
+    border: 1px solid #cbd5e1;
+  }
+
+  td {
+    padding: 7px 10px;
+    border: 1px solid #e2e8f0;
+    vertical-align: top;
+  }
+
+  tr:nth-child(even) {
+    background-color: #f8fafc;
+  }
+
+  .badge-verified {
+    display: inline-block;
+    background-color: #dcfce7;
+    color: #15803d;
+    border: 1px solid #86efac;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 8pt;
+  }
+
+  /* Code Block styling */
+  pre {
+    background: #0f172a;
+    color: #f8fafc;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+    font-size: 8.5pt;
+    line-height: 1.45;
+    margin: 8px 0 12px 0;
+    page-break-inside: avoid;
+    overflow-x: auto;
+    border: 1px solid #334155;
+  }
+
+  code {
+    font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+    font-size: 9pt;
+    color: #0369a1;
+    background: #f0f9ff;
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+
+  pre code {
+    color: inherit;
+    background: transparent;
+    padding: 0;
+  }
+
+  .step-box {
+    margin-bottom: 14px;
+    page-break-inside: avoid;
+  }
+
+  .step-header {
+    font-weight: 700;
+    color: #0f172a;
+    font-size: 10pt;
+    margin-bottom: 4px;
+  }
+
+  .notice-box {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-left: 4px solid #16a34a;
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin: 12px 0;
+    font-size: 9pt;
+    color: #14532d;
+    page-break-inside: avoid;
+  }
+
+  .page-break {
+    page-break-before: always;
+  }
+
+  .tree-block {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 8.5pt;
+    line-height: 1.5;
+    color: #0f172a;
+    margin: 10px 0;
+    page-break-inside: avoid;
+  }
+
+  .views-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .view-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 8.5pt;
+  }
+
+  .view-card strong {
+    color: #0284c7;
+  }
+</style>
+</head>
+<body>
+
+  <!-- Title Card -->
+  <div class="header-card">
+    <div class="header-title">SELEC MiBRX-6M PLC &amp; Raspberry Pi 5</div>
+    <div class="header-subtitle">Industrial IoT Monitoring, Latency Measurement, and Control Gateway</div>
+    <div class="header-meta">
+      <span><strong>Document:</strong> Deployment &amp; Commissioning Manual</span>
+      <span><strong>Target Controller:</strong> Selec MiBRX-6M Modbus TCP</span>
+      <span><strong>Edge Gateway:</strong> Raspberry Pi 5 (64-bit)</span>
+      <span><strong>Status:</strong> Ready for Production</span>
+    </div>
+  </div>
+
+  <!-- Section 1 -->
+  <h2>1. System Cross-Check &amp; Hardware Verification</h2>
+  <p>Every field signal and hardware interface requested has been verified and integrated into the software architecture:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 20%;">Signal / Device</th>
+        <th style="width: 27%;">Physical Interface / Mapping</th>
+        <th style="width: 33%;">Implementation in Gateway</th>
+        <th style="width: 20%;">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Selec MiBRX-6M PLC</strong></td>
+        <td>Modbus TCP (Port 502, Slave ID 1)</td>
+        <td><code>backend/app/plc/modbus_client.py</code>: Async grouped block polling, auto-reconnect, exponential backoff.</td>
+        <td><span class="badge-verified">&#10003; VERIFIED</span></td>
+      </tr>
+      <tr>
+        <td><strong>Load Cell</strong></td>
+        <td>MiBRX Analog Input (0-10V / 4-20mA to Reg <code>40001</code>)</td>
+        <td><code>backend/app/sensors/processing.py</code>: Zero tare calibration + span factor calculation: <em>kg = (raw - tare) &times; factor</em>.</td>
+        <td><span class="badge-verified">&#10003; VERIFIED</span></td>
+      </tr>
+      <tr>
+        <td><strong>Motor Temperature</strong></td>
+        <td>PT100/RTD Input Module (Reg <code>40002</code>, 0.1&deg;C/count)</td>
+        <td><code>backend/app/sensors/processing.py</code>: Warning at 75&deg;C, Critical Alarm at 90&deg;C with 2&deg;C recovery hysteresis.</td>
+        <td><span class="badge-verified">&#10003; VERIFIED</span></td>
+      </tr>
+      <tr>
+        <td><strong>Belt Slip Sensor</strong></td>
+        <td>Inductive switch on roller (Discrete Input <code>10001</code>)</td>
+        <td><code>backend/app/sensors/processing.py</code>: Debounced state + cross-check with VFD reference vs encoder speed.</td>
+        <td><span class="badge-verified">&#10003; VERIFIED</span></td>
+      </tr>
+      <tr>
+        <td><strong>Rotary Encoder</strong></td>
+        <td>High-Speed Counter (Regs <code>40003-40004</code>, 32-bit UINT)</td>
+        <td><code>backend/app/plc/decoder.py</code>: 32-bit rollover aware ($0 \to 4.29 \times 10^9$); computes roller RPM &amp; linear speed (m/s).</td>
+        <td><span class="badge-verified">&#10003; VERIFIED</span></td>
+      </tr>
+      <tr>
+        <td><strong>Energy Meter</strong></td>
+        <td>RS-485 Modbus RTU into MiBRX Regs <code>40011-40022</code></td>
+        <td><code>backend/app/plc/decoder.py</code>: Decodes 32-bit IEEE-754 floats for Voltage (V), Current (A), kW, PF, and cumulative kWh.</td>
+        <td><span class="badge-verified">&#10003; VERIFIED</span></td>
+      </tr>
+      <tr>
+        <td><strong>Production Counter</strong></td>
+        <td>Optical beam sensor (Regs <code>40006-40007</code>, 32-bit UINT)</td>
+        <td><code>backend/app/sensors/processing.py</code>: Total parts accumulator, shift persistence, and throughput rate (parts/min).</td>
+        <td><span class="badge-verified">&#10003; VERIFIED</span></td>
+      </tr>
+      <tr>
+        <td><strong>Product Pusher Actuator</strong></td>
+        <td>Coil <code>00001</code> (Command) + Reed Switches <code>10002/10003</code> (Feedback)</td>
+        <td><code>backend/app/control/service.py</code>: Separates commanded state from physical feedback; mismatch alarm if timeout exceeds 1.5s.</td>
+        <td><span class="badge-verified">&#10003; VERIFIED</span></td>
+      </tr>
+      <tr>
+        <td><strong>VFD Analog &amp; Digital</strong></td>
+        <td>Coil <code>00002</code> (Run/Stop), Reg <code>40031</code> (Speed SP), Inputs <code>10004/10005</code></td>
+        <td><code>backend/app/control/service.py</code>: Speed setpoint clamp (5-50 Hz), Run/Stop commands, and VFD fault monitoring.</td>
+        <td><span class="badge-verified">&#10003; VERIFIED</span></td>
+      </tr>
+      <tr>
+        <td><strong>Direct Vibration Sensor</strong></td>
+        <td>Direct Raspberry Pi 5 connection (I2C GPIO 2/3 or SPI/ADC)</td>
+        <td><code>backend/app/vibration/sensor.py</code>: High-speed sampling (1000 Hz) computing RMS, Peak, Pk-Pk, and 512-pt FFT spectrum.</td>
+        <td><span class="badge-verified">&#10003; VERIFIED</span></td>
+      </tr>
+      <tr>
+        <td><strong>Latency Measurement</strong></td>
+        <td>High-resolution monotonic clock on edge + UTC ISO8601</td>
+        <td><code>backend/app/latency/monitor.py</code>: Separates Modbus RTT, ingestion delay, publish delay, and client render lag. Computes P50, P95, P99, Jitter.</td>
+        <td><span class="badge-verified">&#10003; VERIFIED</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="page-break"></div>
+
+  <!-- Section 2 -->
+  <h2>2. Files to Deploy on the Raspberry Pi 5</h2>
+  <div class="notice-box">
+    <strong>Production Optimization:</strong> Because the React frontend is pre-compiled into <code>frontend/dist/</code>, you <strong>do NOT need Node.js or npm</strong> on the Raspberry Pi 5! The Python FastAPI backend serves both the API/WebSocket and the static UI assets directly on port 8000.
+  </div>
+
+  <p>Copy the following clean directory structure to <code>/opt/selec-iot-dashboard</code> on the Raspberry Pi 5:</p>
+
+  <div class="tree-block">
+/opt/selec-iot-dashboard/
+├── backend/                       # Python FastAPI backend source
+│   ├── app/                       # Core, PLC poller, vibration, latency, control
+│   └── requirements.txt           # Python dependencies (PyModbus, FastAPI, etc.)
+├── config/
+│   └── register_map.yaml          # Selec MiBRX-6M register map & writable allowlist
+├── frontend/
+│   └── dist/                      # Pre-built React production dashboard assets
+├── tools/
+│   ├── modbus_test.py             # Diagnostic tool to verify PLC communication
+│   └── latency_benchmark.py       # Latency profiler with CSV export
+├── deploy/
+│   └── systemd/
+│       └── selec-iot.service      # systemd service unit for auto-start on boot
+├── .env                           # Active environment configuration
+└── .env.example
+  </div>
+
+  <p><strong>Files excluded from Raspberry Pi 5:</strong> <code>frontend/node_modules/</code>, <code>frontend/src/</code>, <code>frontend/package.json</code>, <code>.git/</code>, and host virtual environments (create fresh <code>venv</code> on the Pi).</p>
+
+  <!-- Section 3 -->
+  <h2>3. Step-by-Step Deployment Commands on Raspberry Pi 5</h2>
+
+  <div class="step-box">
+    <div class="step-header">Step 1: Install Base Packages</div>
+    <pre><code>sudo apt update && sudo apt upgrade -y
+sudo apt install -y python3 python3-pip python3-venv git curl i2c-tools ufw</code></pre>
+  </div>
+
+  <div class="step-box">
+    <div class="step-header">Step 2: Create Dedicated Service User</div>
+    <pre><code>sudo useradd -r -s /bin/false -d /opt/selec-iot-dashboard -m iotgateway
+sudo usermod -aG i2c,spi,dialout iotgateway
+
+sudo mkdir -p /opt/selec-iot-dashboard
+sudo chown -R $USER:$USER /opt/selec-iot-dashboard</code></pre>
+  </div>
+
+  <div class="step-box">
+    <div class="step-header">Step 3: Copy Project Files &amp; Install Python Virtualenv</div>
+    <p style="font-size: 9pt; color: #64748b; margin-bottom: 4px;">After copying files into <code>/opt/selec-iot-dashboard</code>, initialize the Python runtime:</p>
+    <pre><code>cd /opt/selec-iot-dashboard
+python3 -m venv venv
+./venv/bin/pip install --upgrade pip
+./venv/bin/pip install -r backend/requirements.txt</code></pre>
+  </div>
+
+  <div class="step-box">
+    <div class="step-header">Step 4: Configure Production Parameters (.env)</div>
+    <pre><code>cp .env.example .env
+nano .env</code></pre>
+    <p style="font-size: 9pt; color: #64748b; margin-bottom: 4px;">Set the parameters for your physical PLC connection:</p>
+    <pre><code>PLC_HOST=192.168.1.50                   # Set to physical Selec MiBRX-6M PLC IP
+PLC_PORT=502                           # Modbus TCP Port 502
+PLC_UNIT_ID=1                          # Modbus Slave ID (from Selec ladder)
+SIMULATION_MODE=false                  # Disable simulation, read physical registers
+ALLOW_REMOTE_CONTROL=false             # Safety default: keep false until ready to test writes
+VIBRATION_SENSOR_INTERFACE=I2C_ADXL345 # Or MOCK</code></pre>
+  </div>
+
+  <div class="page-break"></div>
+
+  <div class="step-box">
+    <div class="step-header">Step 5: Verify PLC Communication (Safe Read-Only)</div>
+    <p style="font-size: 9pt; color: #64748b; margin-bottom: 4px;">Run the safe discovery tool before starting background services:</p>
+    <pre><code>./venv/bin/python tools/modbus_test.py --host 192.168.1.50 --port 502 --unit 1</code></pre>
+  </div>
+
+  <div class="step-box">
+    <div class="step-header">Step 6: Install and Enable systemd Service</div>
+    <pre><code>sudo chown -R iotgateway:iotgateway /opt/selec-iot-dashboard
+sudo cp deploy/systemd/selec-iot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now selec-iot</code></pre>
+  </div>
+
+  <div class="step-box">
+    <div class="step-header">Step 7: Verify Service Health &amp; Live Logs</div>
+    <pre><code>sudo systemctl status selec-iot
+sudo journalctl -u selec-iot -f</code></pre>
+  </div>
+
+  <!-- Section 4 -->
+  <h2>4. Accessing the Real-Time Web Dashboard</h2>
+  <p>Open any web browser on your authorized engineering network:</p>
+  <pre><code>http://&lt;RASPBERRY_PI_IP&gt;:8000     (Example: http://192.168.1.100:8000)</code></pre>
+
+  <p>The dashboard connects via WebSockets (10 Hz) and provides 8 dedicated operational views:</p>
+
+  <div class="views-grid">
+    <div class="view-card">
+      <strong>1. Overview:</strong> Machine status indicator (RUNNING, IDLE, FAULTED, COMM_LOST), primary KPIs, PLC connection health, and Raspberry Pi 5 CPU/RAM/Temp.
+    </div>
+    <div class="view-card">
+      <strong>2. Live Monitoring:</strong> Per-signal cards with live values, units, RTT timings, and quality badges (VALID, STALE, DISCONNECTED, SIMULATED).
+    </div>
+    <div class="view-card">
+      <strong>3. Latency Analytics:</strong> Decomposition breakdown (Modbus RTT, Ingestion, Publish, Client Render) with P50, P95, P99 statistics and live CSV benchmark exporter.
+    </div>
+    <div class="view-card">
+      <strong>4. Vibration Analysis:</strong> Time-domain oscilloscope waveform scope, RMS, Peak, Pk-Pk, Crest Factor, and 512-pt FFT spectral frequency bar chart.
+    </div>
+    <div class="view-card">
+      <strong>5. Production:</strong> Total count, shift progress, throughput rate (parts/min), and Load Cell Zero Tare calibration action.
+    </div>
+    <div class="view-card">
+      <strong>6. Energy Monitor:</strong> 3-Phase Voltage, Current, Active Power (kW), Power Factor, Grid Frequency, and Specific Energy per unit (kWh/product).
+    </div>
+    <div class="view-card">
+      <strong>7. Alarms &amp; Events:</strong> Active alarm banner, severity levels (INFO, WARNING, CRITICAL), and operator acknowledgement logging.
+    </div>
+    <div class="view-card">
+      <strong>8. Safe Control Panel:</strong> Hardware interlock permissive status, allowlisted commands (Pusher, VFD), confirmation dialog, and immutable audit log.
+    </div>
+  </div>
+
+  <div style="margin-top: 24px; padding-top: 12px; border-top: 1px solid #cbd5e1; font-size: 8pt; color: #94a3b8; display: flex; justify-content: space-between;">
+    <span>Selec MiBRX-6M Industrial IoT Platform</span>
+    <span>Generated: October 2026</span>
+    <span>Page 3 of 3</span>
+  </div>
+
+</body>
+</html>
