@@ -66,7 +66,7 @@ if %ERRORLEVEL% neq 0 (
 REM 5. Check UI
 echo [5/5] Checking frontend bundle...
 if exist "frontend\dist\index.html" (
-    echo       [OK] Pre-compiled React dashboard verified (frontend\dist).
+    echo       [OK] Pre-compiled React dashboard verified [frontend\dist].
 ) else (
     echo       [WARNING] Pre-compiled frontend not found in frontend\dist!
 )
@@ -76,7 +76,7 @@ echo ======================================================================
 echo        SYSTEM READY! Starting Selec PLC Dashboard Server...          
 echo ======================================================================
 echo   * Local URL:        http://localhost:8000
-echo   * REST API & Docs:  http://localhost:8000/docs
+echo   * REST API ^& Docs:  http://localhost:8000/docs
 echo   * Stop Server:      Press Ctrl + C
 echo ======================================================================
 echo.
@@ -84,7 +84,7 @@ echo.
 REM Automatically open default browser after brief delay
 start "" http://localhost:8000
 
-REM Run the Uvicorn server
-venv\Scripts\python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+REM Run the Uvicorn server with backend app directory
+venv\Scripts\python -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 
 pause

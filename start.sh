@@ -130,4 +130,4 @@ echo -e "${GREEN}${BOLD}========================================================
 echo ""
 
 # Hand over process control to Uvicorn for clean signal handling (SIGINT/SIGTERM)
-exec ./venv/bin/python -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+exec ./venv/bin/python -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
