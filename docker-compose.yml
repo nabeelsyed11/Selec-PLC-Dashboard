@@ -1,0 +1,30 @@
+services:
+  selec-iot-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: selec-mibrx-iot-gateway
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENV=production
+      - LOG_LEVEL=INFO
+      - APP_HOST=0.0.0.0
+      - APP_PORT=8000
+      - PLC_HOST=192.168.1.50
+      - PLC_PORT=502
+      - SIMULATION_MODE=false
+      - ALLOW_REMOTE_CONTROL=false
+      - VIBRATION_SENSOR_INTERFACE=MOCK
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config:ro
+    devices:
+      # Mount Raspberry Pi I2C device if using physical sensor
+      - "/dev/i2c-1:/dev/i2c-1"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/system/telemetry"]
+      interval: 15s
+      timeout: 5s
+      retries: 3

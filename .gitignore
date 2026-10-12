@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.pytest_cache/
+*.db
+data/*.db
+data/*.csv
+
+# Node & Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+
+# Environment & Secrets
+.env
+
+# Logs
+*.log

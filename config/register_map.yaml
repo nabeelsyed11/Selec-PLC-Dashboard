@@ -1,0 +1,324 @@
+# ==============================================================================
+# Selec MiBRX-6M Modbus TCP Register Mapping Configuration
+# ==============================================================================
+# NOTE: The addresses below represent the baseline industrial hypothesis for
+# the Selec MiBRX-6M PLC. Confirm offset base (0-based vs 1-based) and actual
+# memory addresses in the Selec Ladder program before connecting to physical hardware.
+# ==============================================================================
+
+plc_connection:
+  default_host: "127.0.0.1"      # Change to physical PLC IP (e.g. 192.168.1.50)
+  default_port: 5020             # Modbus TCP port (502 for hardware, 5020 for simulation)
+  unit_id: 1                     # Modbus Unit ID / Slave ID
+  timeout_seconds: 1.5           # Socket response timeout
+  max_retries: 3                 # Retries before marking connection degraded
+  backoff_initial_ms: 100        # Exponential backoff base
+  backoff_max_ms: 3000           # Maximum backoff interval
+  max_data_age_seconds: 3.0      # Data older than this is flagged as STALE
+
+# ------------------------------------------------------------------------------
+# Polling Groups (Registers grouped for block-read efficiency)
+# ------------------------------------------------------------------------------
+polling_groups:
+  fast_group:
+    interval_ms: 200             # 5 Hz for dynamic motion & counters
+    enabled: true
+  medium_group:
+    interval_ms: 500             # 2 Hz for thermal & power monitoring
+    enabled: true
+  slow_group:
+    interval_ms: 2000            # 0.5 Hz for cumulative counters & diagnostics
+    enabled: true
+
+# ------------------------------------------------------------------------------
+# Writable Allowlist: SAFETY CRITICAL
+# ONLY registers explicitly listed below can ever receive write commands.
+# All other registers are strictly read-only.
+# ------------------------------------------------------------------------------
+writable_allowlist:
+  - name: "pusher_command"
+    address: 0
+    function_code: 5             # Write Single Coil (FC 05)
+    description: "Product pusher solenoid control (0=Retract, 1=Extend)"
+    requires_interlock: true
+    confirmation_required: true
+
+  - name: "vfd_run_command"
+    address: 1
+    function_code: 5             # Write Single Coil (FC 05)
+    description: "VFD Drive Run/Stop command (0=Stop, 1=Run)"
+    requires_interlock: true
+    confirmation_required: true
+
+  - name: "vfd_speed_setpoint"
+    address: 30
+    function_code: 6             # Write Single Register (FC 06)
+    description: "VFD Speed setpoint in 0.1 Hz (e.g. 500 = 50.0 Hz)"
+    min_value: 50                # Minimum safe frequency (5.0 Hz)
+    max_value: 500               # Maximum safe frequency (50.0 Hz)
+    requires_interlock: false
+    confirmation_required: true
+
+  - name: "production_counter_reset"
+    address: 2
+    function_code: 5             # Write Single Coil (FC 05)
+    description: "Pulse coil to reset temporary shift counter"
+    requires_interlock: false
+    confirmation_required: true
+
+# ------------------------------------------------------------------------------
+# Discrete Inputs / Coils (Bit-level signals)
+# ------------------------------------------------------------------------------
+discrete_signals:
+  - name: "belt_slip_sensor"
+    description: "Inductive proximity switch monitoring driven roller"
+    type: "discrete_input"
+    address: 0                  # FC 02 (Address 10001 in 1-based)
+    group: "fast_group"
+    normal_state: 0             # 0=Normal, 1=Slip Detected
+    debounce_ms: 50
+
+  - name: "pusher_extended_feedback"
+    description: "Magnetic reed switch: pusher fully extended"
+    type: "discrete_input"
+    address: 1
+    group: "fast_group"
+    normal_state: 0
+
+  - name: "pusher_retracted_feedback"
+    description: "Magnetic reed switch: pusher fully retracted"
+    type: "discrete_input"
+    address: 2
+    group: "fast_group"
+    normal_state: 1
+
+  - name: "vfd_running_status"
+    description: "VFD run feedback relay"
+    type: "discrete_input"
+    address: 3
+    group: "fast_group"
+    normal_state: 0
+
+  - name: "vfd_fault_status"
+    description: "VFD fault trip contact (1=Fault)"
+    type: "discrete_input"
+    address: 4
+    group: "fast_group"
+    normal_state: 0
+
+  - name: "emergency_stop_ok"
+    description: "Hardware E-Stop circuit status (1=Healthy, 0=Tripped)"
+    type: "discrete_input"
+    address: 5
+    group: "fast_group"
+    normal_state: 1
+
+  - name: "safety_guard_closed"
+    description: "Interlock guard door limit switch (1=Closed, 0=Open)"
+    type: "discrete_input"
+    address: 6
+    group: "fast_group"
+    normal_state: 1
+
+  - name: "optical_part_sensor"
+    description: "Photoelectric beam sensor detecting passing item"
+    type: "discrete_input"
+    address: 7
+    group: "fast_group"
+    normal_state: 0
+
+# ------------------------------------------------------------------------------
+# Analog & Numerical Registers (Holding Registers FC 03)
+# ------------------------------------------------------------------------------
+numerical_signals:
+  # 1. Load Cell
+  - name: "load_cell_weight"
+    description: "Load cell force / weight on platform"
+    address: 0
+    function_code: 3
+    data_type: "uint16"
+    byte_order: "big"
+    scaling_factor: 0.1         # 10 counts = 1.0 kg (0-4000 counts -> 0.0 - 400.0 kg)
+    offset: 0.0
+    engineering_unit: "kg"
+    group: "fast_group"
+    alarm_warning_high: 350.0
+    alarm_critical_high: 420.0
+
+  # 2. Motor Temperature
+  - name: "motor_temperature"
+    description: "Stator winding temperature from PT100 probe"
+    address: 1
+    function_code: 3
+    data_type: "int16"
+    byte_order: "big"
+    scaling_factor: 0.1         # 253 counts = 25.3 °C
+    offset: 0.0
+    engineering_unit: "°C"
+    group: "medium_group"
+    alarm_warning_high: 75.0
+    alarm_critical_high: 90.0
+
+  # 3. High-Speed Encoder Counter (32-bit UINT across 2 registers: 40003 & 40004)
+  - name: "encoder_raw_count"
+    description: "High speed counter accumulator (32-bit)"
+    address: 2
+    register_count: 2
+    function_code: 3
+    data_type: "uint32"
+    byte_order: "big"
+    word_swap: false
+    scaling_factor: 1.0
+    offset: 0.0
+    engineering_unit: "pulses"
+    group: "fast_group"
+
+  # 4. Conveyor Speed (Derived from Encoder pulses by PLC or Gateway)
+  - name: "conveyor_belt_speed"
+    description: "Calculated belt linear velocity"
+    address: 4
+    function_code: 3
+    data_type: "uint16"
+    byte_order: "big"
+    scaling_factor: 0.01        # 125 counts = 1.25 m/s
+    offset: 0.0
+    engineering_unit: "m/s"
+    group: "fast_group"
+
+  # 5. Production Counter (32-bit UINT across 2 registers: 40006 & 40007)
+  - name: "production_count_total"
+    description: "Cumulative finished product count"
+    address: 5
+    register_count: 2
+    function_code: 3
+    data_type: "uint32"
+    byte_order: "big"
+    word_swap: false
+    scaling_factor: 1.0
+    offset: 0.0
+    engineering_unit: "units"
+    group: "fast_group"
+
+  # 6. Production Rate
+  - name: "production_rate_ppm"
+    description: "Production throughput rate"
+    address: 7
+    function_code: 3
+    data_type: "uint16"
+    byte_order: "big"
+    scaling_factor: 0.1         # 120 counts = 12.0 ppm
+    offset: 0.0
+    engineering_unit: "parts/min"
+    group: "medium_group"
+
+  # 7. Energy Meter Parameters (Via RS-485 Gateway into MiBRX registers)
+  - name: "mains_voltage_v"
+    description: "AC Line RMS Voltage"
+    address: 10
+    register_count: 2
+    function_code: 3
+    data_type: "float32"
+    byte_order: "big"
+    word_swap: false
+    scaling_factor: 1.0
+    offset: 0.0
+    engineering_unit: "V"
+    group: "medium_group"
+
+  - name: "mains_current_a"
+    description: "AC Line RMS Current"
+    address: 12
+    register_count: 2
+    function_code: 3
+    data_type: "float32"
+    byte_order: "big"
+    word_swap: false
+    scaling_factor: 1.0
+    offset: 0.0
+    engineering_unit: "A"
+    group: "medium_group"
+
+  - name: "active_power_kw"
+    description: "Total 3-Phase Active Power"
+    address: 14
+    register_count: 2
+    function_code: 3
+    data_type: "float32"
+    byte_order: "big"
+    word_swap: false
+    scaling_factor: 1.0
+    offset: 0.0
+    engineering_unit: "kW"
+    group: "medium_group"
+
+  - name: "power_factor"
+    description: "Overall Power Factor"
+    address: 16
+    register_count: 2
+    function_code: 3
+    data_type: "float32"
+    byte_order: "big"
+    word_swap: false
+    scaling_factor: 1.0
+    offset: 0.0
+    engineering_unit: ""
+    group: "medium_group"
+
+  - name: "grid_frequency_hz"
+    description: "AC Grid Frequency"
+    address: 18
+    function_code: 3
+    data_type: "uint16"
+    byte_order: "big"
+    scaling_factor: 0.01        # 5002 counts = 50.02 Hz
+    offset: 0.0
+    engineering_unit: "Hz"
+    group: "slow_group"
+
+  - name: "cumulative_energy_kwh"
+    description: "Total Accumulated Active Energy"
+    address: 20
+    register_count: 2
+    function_code: 3
+    data_type: "float32"
+    byte_order: "big"
+    word_swap: false
+    scaling_factor: 1.0
+    offset: 0.0
+    engineering_unit: "kWh"
+    group: "slow_group"
+
+  # 8. VFD Feedback Registers
+  - name: "vfd_output_frequency"
+    description: "VFD actual output frequency"
+    address: 25
+    function_code: 3
+    data_type: "uint16"
+    byte_order: "big"
+    scaling_factor: 0.1         # 452 = 45.2 Hz
+    offset: 0.0
+    engineering_unit: "Hz"
+    group: "fast_group"
+
+  - name: "vfd_motor_current"
+    description: "VFD output current"
+    address: 26
+    function_code: 3
+    data_type: "uint16"
+    byte_order: "big"
+    scaling_factor: 0.1         # 124 = 12.4 A
+    offset: 0.0
+    engineering_unit: "A"
+    group: "medium_group"
+
+  # 9. PLC Sequence Clock / Cycle Timestamp (Optional PLC Hardware support)
+  - name: "plc_cycle_sequence"
+    description: "Rolling 16-bit scan cycle counter for hardware latency timing"
+    address: 29
+    function_code: 3
+    data_type: "uint16"
+    byte_order: "big"
+    scaling_factor: 1.0
+    offset: 0.0
+    engineering_unit: "scans"
+    group: "fast_group"
