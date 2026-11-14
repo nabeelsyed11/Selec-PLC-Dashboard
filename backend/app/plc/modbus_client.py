@@ -52,6 +52,8 @@ class SelecModbusClient:
         self._polling_tasks: List[asyncio.Task] = []
         self._running = False
         self._on_measurement_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+        self._reconnect_lock: Optional[asyncio.Lock] = None
+        self._last_reconnect_time = 0.0
 
     async def reconfigure(
         self,
@@ -123,48 +125,75 @@ class SelecModbusClient:
     async def connect(self) -> bool:
         """Establish or verify Modbus TCP connection."""
         if self.simulation_mode:
-            # Check if standalone Modbus server is reachable; if not, use in-process simulation directly
-            try:
-                self.client = AsyncModbusTcpClient(self.host, port=self.port, timeout=self.timeout)
-                connected = await self.client.connect()
-                if connected:
-                    self.diagnostics.connected = True
-                    logger.info(f"Connected to simulated Modbus TCP server at {self.host}:{self.port}")
-                    return True
-            except Exception as e:
-                logger.debug(f"Direct TCP socket to {self.host}:{self.port} not open: using in-process mock PLC: {e}")
+            # Check if standalone Modbus server is running on localhost; otherwise use in-process engine
+            if self.host in ("127.0.0.1", "localhost"):
+                try:
+                    client = AsyncModbusTcpClient(self.host, port=self.port, timeout=0.1)
+                    connected = await asyncio.wait_for(client.connect(), timeout=0.15)
+                    if connected:
+                        self.client = client
+                        self.diagnostics.connected = True
+                        logger.info(f"Connected to simulated Modbus TCP server at {self.host}:{self.port}")
+                        return True
+                    else:
+                        client.close()
+                except Exception:
+                    pass
             self.diagnostics.connected = True
             logger.info("Using high-fidelity in-process Selec PLC simulation engine.")
             return True
 
-        # Physical hardware connection
-        try:
-            if not self.client:
+        # Physical hardware connection - Throttle reconnection attempts to at most once every 3.0s
+        now = time.monotonic()
+        if now - self._last_reconnect_time < 3.0:
+            return self.diagnostics.connected
+
+        if self._reconnect_lock is None:
+            self._reconnect_lock = asyncio.Lock()
+
+        if self._reconnect_lock.locked():
+            return self.diagnostics.connected
+
+        async with self._reconnect_lock:
+            now = time.monotonic()
+            if now - self._last_reconnect_time < 3.0:
+                return self.diagnostics.connected
+            self._last_reconnect_time = now
+
+            try:
+                if self.client:
+                    try:
+                        self.client.close()
+                    except Exception:
+                        pass
                 self.client = AsyncModbusTcpClient(self.host, port=self.port, timeout=self.timeout)
-            # Use asyncio.wait_for with a short timeout so startup never hangs if PLC is offline/unreachable
-            connected = await asyncio.wait_for(self.client.connect(), timeout=min(2.0, self.timeout))
-            self.diagnostics.connected = bool(connected)
-            if connected:
-                logger.info(f"Connected to physical Selec MiBRX-6M PLC at {self.host}:{self.port}")
-            else:
-                logger.warning(f"Failed to connect to PLC at {self.host}:{self.port}. Polling loop will retry.")
-            return bool(connected)
-        except asyncio.TimeoutError:
-            self.diagnostics.connected = False
-            logger.warning(f"Connection timed out to PLC at {self.host}:{self.port}. Background polling will keep retrying.")
-            return False
-        except Exception as e:
-            self.diagnostics.connected = False
-            logger.warning(f"Socket connection error to PLC {self.host}:{self.port}: {e}. Background polling will keep retrying.")
-            return False
+                connected = await asyncio.wait_for(self.client.connect(), timeout=min(1.0, self.timeout))
+                self.diagnostics.connected = bool(connected)
+                if connected:
+                    logger.info(f"Connected to physical Selec MiBRX-6M PLC at {self.host}:{self.port}")
+                else:
+                    logger.warning(f"Failed to connect to PLC at {self.host}:{self.port}. Polling loop will retry.")
+                return bool(connected)
+            except (asyncio.TimeoutError, Exception) as e:
+                self.diagnostics.connected = False
+                logger.debug(f"Connection attempt to PLC at {self.host}:{self.port} failed: {e}")
+                return False
 
     async def disconnect(self):
-        """Close client connection."""
+        """Close client connection and cleanly stop polling tasks."""
         self._running = False
         for t in self._polling_tasks:
-            t.cancel()
+            if not t.done():
+                t.cancel()
+        if self._polling_tasks:
+            await asyncio.gather(*self._polling_tasks, return_exceptions=True)
+            self._polling_tasks.clear()
         if self.client:
-            self.client.close()
+            try:
+                self.client.close()
+            except Exception:
+                pass
+            self.client = None
         self.diagnostics.connected = False
 
     async def start_polling(self):
