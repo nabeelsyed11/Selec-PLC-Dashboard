@@ -73,3 +73,7 @@ discovery_level: 1 | 2 | 3
 | 1 | 2-5 min | Single known library, confirming syntax |
 | 2 | 15-30 min | Choosing between options, new integration |
 | 3 | 1+ hour | Architectural decision, novel problem |
+
+---
+
+*Last updated: <!-- date -->*

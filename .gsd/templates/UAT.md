@@ -166,3 +166,7 @@ status: pending | in_progress | passed | failed
 2. Edge cases (boundary conditions)
 3. Error handling (invalid input, failures)
 4. Visual/UX (layout, responsiveness)
+
+---
+
+*Last updated: <!-- date -->*

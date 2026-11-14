@@ -50,3 +50,7 @@
 ---
 
 *Completed: YYYY-MM-DD*
+
+---
+
+*Last updated: <!-- date -->*

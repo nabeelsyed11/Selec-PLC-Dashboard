@@ -120,3 +120,7 @@ Create `.gsd/phases/{N}/DISCOVERY.md`:
 - Niche/complex domains (3D, games, audio)
 - Need ecosystem knowledge, not just library choice
 - "How do experts build this" questions
+
+---
+
+*Last updated: <!-- date -->*

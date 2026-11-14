@@ -122,3 +122,7 @@ Key decisions made during specification:
 - Goals should be achievable in one milestone
 - Non-goals are as important as goals
 - Success criteria must be measurable
+
+---
+
+*Last updated: <!-- date -->*

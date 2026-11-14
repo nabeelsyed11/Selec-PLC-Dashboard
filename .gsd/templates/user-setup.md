@@ -114,3 +114,7 @@ Type "done" or "setup complete" to continue with execution.
 - API calls (AI can do)
 
 **Keep minimal** — every manual step slows down execution.
+
+---
+
+*Last updated: <!-- date -->*

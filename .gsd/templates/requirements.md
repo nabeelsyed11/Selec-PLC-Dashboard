@@ -90,3 +90,7 @@ Requirements derived from SPEC.md for traceability and coverage tracking.
 - Phase completes (mark requirements satisfied)
 - Scope changes (add/defer requirements)
 - Verification passes (update status)
+
+---
+
+*Last updated: <!-- date -->*

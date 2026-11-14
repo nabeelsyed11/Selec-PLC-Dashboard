@@ -77,3 +77,7 @@ For simple tracking:
 ---
 
 *Part of GSD v1.6 Token Optimization.*
+
+---
+
+*Last updated: <!-- date -->*

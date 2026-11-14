@@ -101,3 +101,7 @@ updated: [ISO timestamp]
 - Each phase has clear deliverable
 - Dependencies flow forward
 - Update status as work progresses
+
+---
+
+*Last updated: <!-- date -->*

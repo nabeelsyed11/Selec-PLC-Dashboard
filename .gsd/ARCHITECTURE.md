@@ -172,3 +172,7 @@ Selec PLC Dashboard/
 │   └── docker-compose.yml    # Containerized deployment option
 └── docs/                     # Commissioning, hardware checklist, troubleshooting
 ```
+
+---
+
+*Last updated: 2026-11-14*

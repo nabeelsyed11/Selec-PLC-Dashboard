@@ -121,3 +121,7 @@ When AI reads this file after session reset:
 5. Continue from next_action
 
 The file IS the debugging brain.
+
+---
+
+*Last updated: <!-- date -->*

@@ -89,3 +89,7 @@ Created by `/discuss-phase` to capture user's vision before planning.
 - Capture user's words, not AI interpretation
 - Focus on WHAT, not HOW
 - Keep it short — vision, not specification
+
+---
+
+*Last updated: <!-- date -->*

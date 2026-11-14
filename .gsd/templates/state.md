@@ -90,3 +90,7 @@ When starting a new session:
 4. Continue from Next Steps
 
 The STATE.md is the "save game" for the project.
+
+---
+
+*Last updated: <!-- date -->*

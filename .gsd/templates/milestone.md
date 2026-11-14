@@ -89,3 +89,7 @@ Key technical decisions for this milestone:
 - 3-5 phases per milestone
 - Must-haves should be testable
 - Success criteria should be measurable
+
+---
+
+*Last updated: <!-- date -->*

@@ -68,3 +68,7 @@ total_count: {Y}
 | Test suite | Test output |
 | File exists | `ls` or `dir` output |
 | Build passes | Build command output |
+
+---
+
+*Last updated: <!-- date -->*

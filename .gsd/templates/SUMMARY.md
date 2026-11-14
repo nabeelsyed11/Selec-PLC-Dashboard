@@ -101,3 +101,7 @@ status: complete | partial | failed
 - No opinions
 - Just what happened
 - Evidence over claims
+
+---
+
+*Last updated: <!-- date -->*

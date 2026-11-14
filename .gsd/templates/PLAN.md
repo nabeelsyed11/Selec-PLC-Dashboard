@@ -88,3 +88,7 @@ After all tasks complete, verify:
 
 Plans in the same wave can run in parallel.
 Later waves depend on earlier waves.
+
+---
+
+*Last updated: <!-- date -->*

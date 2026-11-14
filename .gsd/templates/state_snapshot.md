@@ -130,3 +130,7 @@ STATE.md is current state; snapshots are historical records.
 ---
 
 *Part of GSD methodology. See PROJECT_RULES.md for wave execution rules.*
+
+---
+
+*Last updated: <!-- date -->*
