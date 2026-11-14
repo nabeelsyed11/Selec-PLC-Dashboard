@@ -28,6 +28,27 @@ export const LiveMonitoringPage: React.FC<Props> = ({ telemetry }) => {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {/* Hardware Disconnection Warning */}
+      {!telemetry.simulation_mode && !telemetry.diagnostics.connected && (
+        <div
+          style={{
+            padding: "14px 18px",
+            borderRadius: "8px",
+            background: "rgba(239, 68, 68, 0.12)",
+            border: "1px solid rgba(239, 68, 68, 0.35)",
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+          }}
+        >
+          <AlertTriangle style={{ width: "20px", height: "20px", color: "#f87171", flexShrink: 0 }} />
+          <div style={{ fontSize: "13px" }}>
+            <span style={{ fontWeight: 700, color: "#f87171" }}>Physical PLC Not Detected:</span>{" "}
+            Simulation is OFF and the Modbus TCP link to <code className="mono">{telemetry.plc_host || "192.168.1.50"}:{telemetry.plc_port || 502}</code> is offline. Signals are marked as <span className="mono badge-quality-disconnected" style={{ padding: "1px 6px", borderRadius: "4px" }}>DISCONNECTED</span> with zero values to prevent false data display.
+          </div>
+        </div>
+      )}
+
       {/* Header and Filter Tabs */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
         <div>

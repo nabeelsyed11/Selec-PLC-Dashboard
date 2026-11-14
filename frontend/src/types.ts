@@ -98,6 +98,10 @@ export interface TelemetryMessage {
   type: string;
   timestamp: string;
   machine_state: "RUNNING" | "STOPPED" | "IDLE" | "FAULTED" | "COMM_LOST";
+  simulation_mode?: boolean;
+  plc_connected?: boolean;
+  plc_host?: string;
+  plc_port?: number;
   signals: Record<string, SignalData>;
   latency: LatencyPayload;
   alarms: AlarmItem[];

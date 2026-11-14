@@ -12,6 +12,8 @@ export const AlarmsPage: React.FC<Props> = ({ telemetry }) => {
 
   if (!telemetry) return null;
   const alarms = telemetry.alarms || [];
+  const isSim = Boolean(telemetry.simulation_mode);
+  const isConnected = Boolean(telemetry.plc_connected ?? telemetry.diagnostics?.connected);
 
   const handleAcknowledge = async (alarmName: string) => {
     try {
@@ -43,11 +45,50 @@ export const AlarmsPage: React.FC<Props> = ({ telemetry }) => {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       <div className="glass-panel" style={{ padding: "20px 24px" }}>
-        <h2 style={{ fontSize: "20px", fontWeight: 700 }}>Alarms & Safety Events Console</h2>
-        <p style={{ color: "var(--text-muted)", fontSize: "13px" }}>
-          Active machine safety interlocks, process thresholds, and operator acknowledgement audit
-        </p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+          <div>
+            <h2 style={{ fontSize: "20px", fontWeight: 700 }}>Alarms & Safety Events Console</h2>
+            <p style={{ color: "var(--text-muted)", fontSize: "13px" }}>
+              Active machine safety interlocks, process thresholds, and operator acknowledgement audit
+            </p>
+          </div>
+          <div>
+            {isSim ? (
+              <span style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 700, background: "rgba(168, 85, 247, 0.15)", border: "1px solid rgba(168, 85, 247, 0.4)", color: "#c084fc" }}>
+                SIMULATED ALARMS ACTIVE
+              </span>
+            ) : isConnected ? (
+              <span style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 700, background: "rgba(34, 197, 94, 0.15)", border: "1px solid rgba(34, 197, 94, 0.4)", color: "#4ade80" }}>
+                REAL PLC HARDWARE MONITORING
+              </span>
+            ) : (
+              <span style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 700, background: "rgba(239, 68, 68, 0.15)", border: "1px solid rgba(239, 68, 68, 0.4)", color: "#f87171" }}>
+                PLC NOT DETECTED (COMM LOST)
+              </span>
+            )}
+          </div>
+        </div>
       </div>
+
+      {!isSim && !isConnected && (
+        <div
+          style={{
+            padding: "16px 20px",
+            borderRadius: "8px",
+            background: "rgba(239, 68, 68, 0.12)",
+            border: "1px solid rgba(239, 68, 68, 0.35)",
+            display: "flex",
+            alignItems: "center",
+            gap: "14px",
+          }}
+        >
+          <ShieldAlert style={{ width: "24px", height: "24px", color: "#f87171", flexShrink: 0 }} />
+          <div style={{ fontSize: "13px", lineHeight: "1.5" }}>
+            <strong style={{ color: "#f87171", display: "block" }}>PLC Communication Failure:</strong>
+            The physical Selec PLC is not responding at <code className="mono">{telemetry.plc_host || "192.168.1.50"}:{telemetry.plc_port || 502}</code>. A critical <code>PLC_COMM_LOST</code> alarm has been logged to alert plant personnel.
+          </div>
+        </div>
+      )}
 
       {feedback && (
         <div style={{ padding: "12px 16px", background: "rgba(16, 185, 129, 0.15)", borderRadius: "8px", border: "1px solid rgba(16, 185, 129, 0.3)", color: "#34d399", fontSize: "13px" }}>

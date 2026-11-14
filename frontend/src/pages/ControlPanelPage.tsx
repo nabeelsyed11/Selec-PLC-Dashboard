@@ -77,6 +77,9 @@ export const ControlPanelPage: React.FC<Props> = ({ telemetry }) => {
 
   if (!telemetry) return null;
   const signals = telemetry.signals;
+  const isSim = Boolean(telemetry.simulation_mode);
+  const isConnected = Boolean(telemetry.plc_connected ?? telemetry.diagnostics?.connected);
+  const hasHardwareAccess = isSim || isConnected;
 
   const eStopOk = signals.emergency_stop_ok?.value === 1;
   const guardClosed = signals.safety_guard_closed?.value === 1;
@@ -126,6 +129,27 @@ export const ControlPanelPage: React.FC<Props> = ({ telemetry }) => {
         </div>
       </div>
 
+      {/* Disconnection Safety Lockout Banner */}
+      {!hasHardwareAccess && (
+        <div
+          style={{
+            padding: "16px 20px",
+            borderRadius: "8px",
+            background: "rgba(239, 68, 68, 0.15)",
+            border: "1px solid rgba(239, 68, 68, 0.4)",
+            display: "flex",
+            alignItems: "center",
+            gap: "14px",
+          }}
+        >
+          <AlertOctagon style={{ width: "24px", height: "24px", color: "#f87171", flexShrink: 0 }} />
+          <div style={{ fontSize: "13px", lineHeight: "1.5" }}>
+            <strong style={{ color: "#f87171", display: "block" }}>CRITICAL SAFETY LOCKOUT: Physical Selec PLC Not Detected</strong>
+            Simulation is OFF and no physical connection is active at <code className="mono">{telemetry.plc_host || "192.168.1.50"}:{telemetry.plc_port || 502}</code>. All output coils (Pusher Solenoid, VFD Run/Stop) and speed setpoint registers are locked in safe offline state and cannot be commanded.
+          </div>
+        </div>
+      )}
+
       {feedbackMsg && (
         <div
           style={{
@@ -151,33 +175,33 @@ export const ControlPanelPage: React.FC<Props> = ({ telemetry }) => {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" }}>
           {/* E-Stop */}
           <div style={{ background: "rgba(0,0,0,0.3)", padding: "16px", borderRadius: "8px", display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: eStopOk ? "#34d399" : "#ef4444" }} />
+            <div style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: !hasHardwareAccess ? "#6b7280" : eStopOk ? "#34d399" : "#ef4444" }} />
             <div>
               <div style={{ fontSize: "13px", fontWeight: 600 }}>Emergency Stop Circuit</div>
-              <div style={{ fontSize: "11px", color: eStopOk ? "#34d399" : "#ef4444" }}>
-                {eStopOk ? "Closed / Healthy (Permissive OK)" : "TRIPPED / OPEN"}
+              <div style={{ fontSize: "11px", color: !hasHardwareAccess ? "var(--text-muted)" : eStopOk ? "#34d399" : "#ef4444" }}>
+                {!hasHardwareAccess ? "PLC OFFLINE (UNKNOWN)" : eStopOk ? "Closed / Healthy (Permissive OK)" : "TRIPPED / OPEN"}
               </div>
             </div>
           </div>
 
           {/* Safety Guard */}
           <div style={{ background: "rgba(0,0,0,0.3)", padding: "16px", borderRadius: "8px", display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: guardClosed ? "#34d399" : "#ef4444" }} />
+            <div style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: !hasHardwareAccess ? "#6b7280" : guardClosed ? "#34d399" : "#ef4444" }} />
             <div>
               <div style={{ fontSize: "13px", fontWeight: 600 }}>Safety Guard Door</div>
-              <div style={{ fontSize: "11px", color: guardClosed ? "#34d399" : "#ef4444" }}>
-                {guardClosed ? "Locked / Closed (Permissive OK)" : "OPEN (Interlock Locked)"}
+              <div style={{ fontSize: "11px", color: !hasHardwareAccess ? "var(--text-muted)" : guardClosed ? "#34d399" : "#ef4444" }}>
+                {!hasHardwareAccess ? "PLC OFFLINE (UNKNOWN)" : guardClosed ? "Locked / Closed (Permissive OK)" : "OPEN (Interlock Locked)"}
               </div>
             </div>
           </div>
 
           {/* VFD Fault */}
           <div style={{ background: "rgba(0,0,0,0.3)", padding: "16px", borderRadius: "8px", display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: !vfdFault ? "#34d399" : "#ef4444" }} />
+            <div style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: !hasHardwareAccess ? "#6b7280" : !vfdFault ? "#34d399" : "#ef4444" }} />
             <div>
               <div style={{ fontSize: "13px", fontWeight: 600 }}>VFD Drive Status</div>
-              <div style={{ fontSize: "11px", color: !vfdFault ? "#34d399" : "#ef4444" }}>
-                {!vfdFault ? "Ready / No Fault" : "DRIVE FAULT ACTIVE"}
+              <div style={{ fontSize: "11px", color: !hasHardwareAccess ? "var(--text-muted)" : !vfdFault ? "#34d399" : "#ef4444" }}>
+                {!hasHardwareAccess ? "PLC OFFLINE (UNKNOWN)" : !vfdFault ? "Ready / No Fault" : "DRIVE FAULT ACTIVE"}
               </div>
             </div>
           </div>
@@ -196,14 +220,14 @@ export const ControlPanelPage: React.FC<Props> = ({ telemetry }) => {
           <div style={{ display: "flex", gap: "12px", marginBottom: "16px" }}>
             <button
               className="btn-primary"
-              disabled={!remoteGloballyEnabled || !eStopOk || !guardClosed}
+              disabled={!hasHardwareAccess || !remoteGloballyEnabled || !eStopOk || !guardClosed}
               onClick={() => setPendingCommand({ name: "pusher_command", value: 1, label: "Extend Pusher Cylinder" })}
             >
               Extend Pusher
             </button>
             <button
               className="btn-secondary"
-              disabled={!remoteGloballyEnabled || !eStopOk || !guardClosed}
+              disabled={!hasHardwareAccess || !remoteGloballyEnabled || !eStopOk || !guardClosed}
               onClick={() => setPendingCommand({ name: "pusher_command", value: 0, label: "Retract Pusher Cylinder" })}
             >
               Retract Pusher
@@ -213,18 +237,18 @@ export const ControlPanelPage: React.FC<Props> = ({ telemetry }) => {
           <div style={{ borderTop: "1px solid var(--border-subtle)", paddingTop: "12px", display: "flex", flexDirection: "column", gap: "6px", fontSize: "12px" }}>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>Commanded Coil State:</span>
-              <strong className="mono">{pusherCmd ? "1 (EXTEND)" : "0 (RETRACT)"}</strong>
+              <strong className="mono">{!hasHardwareAccess ? "OFFLINE" : pusherCmd ? "1 (EXTEND)" : "0 (RETRACT)"}</strong>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>Extended Sensor Feedback:</span>
-              <span className="mono" style={{ color: pusherExtFeedback ? "#34d399" : "var(--text-muted)" }}>
-                {pusherExtFeedback ? "DETECTED (1)" : "0"}
+              <span className="mono" style={{ color: !hasHardwareAccess ? "var(--text-muted)" : pusherExtFeedback ? "#34d399" : "var(--text-muted)" }}>
+                {!hasHardwareAccess ? "OFFLINE" : pusherExtFeedback ? "DETECTED (1)" : "0"}
               </span>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span>Retracted Sensor Feedback:</span>
-              <span className="mono" style={{ color: pusherRetFeedback ? "#34d399" : "var(--text-muted)" }}>
-                {pusherRetFeedback ? "DETECTED (1)" : "0"}
+              <span className="mono" style={{ color: !hasHardwareAccess ? "var(--text-muted)" : pusherRetFeedback ? "#34d399" : "var(--text-muted)" }}>
+                {!hasHardwareAccess ? "OFFLINE" : pusherRetFeedback ? "DETECTED (1)" : "0"}
               </span>
             </div>
           </div>
@@ -240,14 +264,14 @@ export const ControlPanelPage: React.FC<Props> = ({ telemetry }) => {
           <div style={{ display: "flex", gap: "12px", marginBottom: "16px" }}>
             <button
               className="btn-primary"
-              disabled={!remoteGloballyEnabled || !eStopOk || !guardClosed || vfdRunning}
+              disabled={!hasHardwareAccess || !remoteGloballyEnabled || !eStopOk || !guardClosed || vfdRunning}
               onClick={() => setPendingCommand({ name: "vfd_run_command", value: 1, label: "Start VFD Conveyor Drive" })}
             >
               <Play style={{ width: "14px", height: "14px" }} /> Start Drive
             </button>
             <button
               className="btn-danger"
-              disabled={!remoteGloballyEnabled || !vfdRunning}
+              disabled={!hasHardwareAccess || !remoteGloballyEnabled || !vfdRunning}
               onClick={() => setPendingCommand({ name: "vfd_run_command", value: 0, label: "Stop VFD Conveyor Drive" })}
             >
               <Square style={{ width: "14px", height: "14px" }} /> Stop Drive
@@ -260,7 +284,7 @@ export const ControlPanelPage: React.FC<Props> = ({ telemetry }) => {
               <button
                 className="btn-secondary"
                 style={{ padding: "2px 8px", fontSize: "11px" }}
-                disabled={!remoteGloballyEnabled}
+                disabled={!hasHardwareAccess || !remoteGloballyEnabled}
                 onClick={() => setPendingCommand({ name: "vfd_speed_setpoint", value: speedSetpoint, label: `Set VFD Speed to ${(speedSetpoint / 10).toFixed(1)} Hz` })}
               >
                 Apply Speed
@@ -272,6 +296,7 @@ export const ControlPanelPage: React.FC<Props> = ({ telemetry }) => {
               max={500}
               step={10}
               value={speedSetpoint}
+              disabled={!hasHardwareAccess || !remoteGloballyEnabled}
               onChange={(e) => setSpeedSetpoint(Number(e.target.value))}
               style={{ width: "100%", accentColor: "var(--primary-cyan)" }}
             />

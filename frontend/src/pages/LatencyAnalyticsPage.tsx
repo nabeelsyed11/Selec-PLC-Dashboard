@@ -15,8 +15,12 @@ export const LatencyAnalyticsPage: React.FC<Props> = ({ telemetry, renderLatency
   if (!telemetry) return null;
   const { latency } = telemetry;
   const groups = latency.groups || {};
+  const isSim = Boolean(telemetry.simulation_mode);
+  const isConnected = Boolean(telemetry.plc_connected ?? telemetry.diagnostics?.connected);
+  const hasHardwareAccess = isSim || isConnected;
 
   const handleStartBenchmark = async () => {
+    if (!hasHardwareAccess) return;
     try {
       setIsRunning(true);
       await fetch("/api/latency/benchmark/start", {
@@ -47,9 +51,26 @@ export const LatencyAnalyticsPage: React.FC<Props> = ({ telemetry, renderLatency
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {/* Header and Stage Decomposition Overview */}
       <div className="glass-panel" style={{ padding: "20px 24px" }}>
-        <h2 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px" }}>
-          End-to-End Latency Decomposition Subsystem
-        </h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px", marginBottom: "8px" }}>
+          <h2 style={{ fontSize: "20px", fontWeight: 700 }}>
+            End-to-End Latency Decomposition Subsystem
+          </h2>
+          <div>
+            {isSim ? (
+              <span style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 700, background: "rgba(168, 85, 247, 0.15)", border: "1px solid rgba(168, 85, 247, 0.4)", color: "#c084fc" }}>
+                SIMULATION TIMINGS
+              </span>
+            ) : isConnected ? (
+              <span style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 700, background: "rgba(34, 197, 94, 0.15)", border: "1px solid rgba(34, 197, 94, 0.4)", color: "#4ade80" }}>
+                HARDWARE MODBUS TCP ACTIVE
+              </span>
+            ) : (
+              <span style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 700, background: "rgba(239, 68, 68, 0.15)", border: "1px solid rgba(239, 68, 68, 0.4)", color: "#f87171" }}>
+                PLC NOT DETECTED (DISCONNECTED)
+              </span>
+            )}
+          </div>
+        </div>
         <p style={{ color: "var(--text-muted)", fontSize: "13px", marginBottom: "20px" }}>
           Deconstructs signal delays across the physical acquisition chain, Modbus TCP network, gateway ingestion, and browser DOM rendering.
         </p>
@@ -59,28 +80,34 @@ export const LatencyAnalyticsPage: React.FC<Props> = ({ telemetry, renderLatency
           {/* Stage 1: Modbus Round-Trip */}
           <div style={{ background: "rgba(0,0,0,0.3)", padding: "16px", borderRadius: "8px", borderLeft: "4px solid var(--primary-cyan)" }}>
             <div style={{ fontSize: "11px", textTransform: "uppercase", color: "var(--text-muted)" }}>Stage 1: Modbus RTT</div>
-            <div className="mono" style={{ fontSize: "20px", fontWeight: 700, color: "var(--primary-cyan)", marginTop: "4px" }}>
-              {groups.fast_group ? `${groups.fast_group.rtt_p50_ms.toFixed(1)} ms` : "--"}
+            <div className="mono" style={{ fontSize: "20px", fontWeight: 700, color: hasHardwareAccess ? "var(--primary-cyan)" : "var(--text-muted)", marginTop: "4px" }}>
+              {hasHardwareAccess && groups.fast_group && groups.fast_group.count > 0 ? `${groups.fast_group.rtt_p50_ms.toFixed(1)} ms` : "--"}
             </div>
-            <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "4px" }}>t_response - t_request</div>
+            <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "4px" }}>
+              {hasHardwareAccess ? "t_response - t_request" : "No hardware response"}
+            </div>
           </div>
 
           {/* Stage 2: Gateway Ingest */}
           <div style={{ background: "rgba(0,0,0,0.3)", padding: "16px", borderRadius: "8px", borderLeft: "4px solid #34d399" }}>
             <div style={{ fontSize: "11px", textTransform: "uppercase", color: "var(--text-muted)" }}>Stage 2: Ingest & Decode</div>
-            <div className="mono" style={{ fontSize: "20px", fontWeight: 700, color: "#34d399", marginTop: "4px" }}>
-              {groups.fast_group ? `${groups.fast_group.ingest_mean_ms.toFixed(2)} ms` : "--"}
+            <div className="mono" style={{ fontSize: "20px", fontWeight: 700, color: hasHardwareAccess ? "#34d399" : "var(--text-muted)", marginTop: "4px" }}>
+              {hasHardwareAccess && groups.fast_group && groups.fast_group.count > 0 ? `${groups.fast_group.ingest_mean_ms.toFixed(2)} ms` : "--"}
             </div>
-            <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "4px" }}>t_ingest - t_response</div>
+            <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "4px" }}>
+              {hasHardwareAccess ? "t_ingest - t_response" : "No packet parsed"}
+            </div>
           </div>
 
           {/* Stage 3: Server Publish */}
           <div style={{ background: "rgba(0,0,0,0.3)", padding: "16px", borderRadius: "8px", borderLeft: "4px solid #f59e0b" }}>
             <div style={{ fontSize: "11px", textTransform: "uppercase", color: "var(--text-muted)" }}>Stage 3: Server Publish</div>
-            <div className="mono" style={{ fontSize: "20px", fontWeight: 700, color: "#f59e0b", marginTop: "4px" }}>
-              {groups.fast_group ? `${groups.fast_group.publish_mean_ms.toFixed(2)} ms` : "--"}
+            <div className="mono" style={{ fontSize: "20px", fontWeight: 700, color: hasHardwareAccess ? "#f59e0b" : "var(--text-muted)", marginTop: "4px" }}>
+              {hasHardwareAccess && groups.fast_group && groups.fast_group.count > 0 ? `${groups.fast_group.publish_mean_ms.toFixed(2)} ms` : "--"}
             </div>
-            <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "4px" }}>t_publish - t_ingest</div>
+            <div style={{ fontSize: "11px", color: "var(--text-dim)", marginTop: "4px" }}>
+              {hasHardwareAccess ? "t_publish - t_ingest" : "Holding offline state"}
+            </div>
           </div>
 
           {/* Stage 4: Browser Render */}
@@ -93,6 +120,27 @@ export const LatencyAnalyticsPage: React.FC<Props> = ({ telemetry, renderLatency
           </div>
         </div>
       </div>
+
+      {/* Disconnection Warning */}
+      {!hasHardwareAccess && (
+        <div
+          style={{
+            padding: "16px 20px",
+            borderRadius: "8px",
+            background: "rgba(239, 68, 68, 0.12)",
+            border: "1px solid rgba(239, 68, 68, 0.35)",
+            display: "flex",
+            alignItems: "center",
+            gap: "14px",
+          }}
+        >
+          <AlertCircle style={{ width: "24px", height: "24px", color: "#f87171", flexShrink: 0 }} />
+          <div style={{ fontSize: "13px", lineHeight: "1.5" }}>
+            <strong style={{ color: "#f87171", display: "block" }}>Physical Selec PLC Not Detected:</strong>
+            Simulation is OFF and the Modbus TCP socket cannot reach <code className="mono">{telemetry.plc_host || "192.168.1.50"}:{telemetry.plc_port || 502}</code>. Network RTT is zeroed to avoid false benchmarks.
+          </div>
+        </div>
+      )}
 
       {/* Latency Percentiles Table */}
       <div className="glass-panel" style={{ padding: "20px 24px" }}>
@@ -119,15 +167,21 @@ export const LatencyAnalyticsPage: React.FC<Props> = ({ telemetry, renderLatency
                   <td style={{ padding: "12px", fontWeight: 600, color: "var(--primary-cyan)" }}>
                     {grpName.toUpperCase()}
                   </td>
-                  <td className="mono" style={{ padding: "12px" }}>{stats.count.toLocaleString()}</td>
-                  <td className="mono" style={{ padding: "12px" }}>{stats.rtt_mean_ms.toFixed(2)} ms</td>
-                  <td className="mono" style={{ padding: "12px", color: "#34d399", fontWeight: 600 }}>{stats.rtt_p50_ms.toFixed(2)} ms</td>
-                  <td className="mono" style={{ padding: "12px", color: "#fbbf24" }}>{stats.rtt_p95_ms.toFixed(2)} ms</td>
-                  <td className="mono" style={{ padding: "12px", color: "#f87171", fontWeight: 600 }}>{stats.rtt_p99_ms.toFixed(2)} ms</td>
-                  <td className="mono" style={{ padding: "12px", color: "var(--text-dim)" }}>
-                    {stats.rtt_min_ms.toFixed(1)} / {stats.rtt_max_ms.toFixed(1)} ms
+                  <td className="mono" style={{ padding: "12px" }}>{hasHardwareAccess ? stats.count.toLocaleString() : "0"}</td>
+                  <td className="mono" style={{ padding: "12px" }}>{hasHardwareAccess && stats.count > 0 ? `${stats.rtt_mean_ms.toFixed(2)} ms` : "--"}</td>
+                  <td className="mono" style={{ padding: "12px", color: hasHardwareAccess ? "#34d399" : "var(--text-muted)", fontWeight: 600 }}>
+                    {hasHardwareAccess && stats.count > 0 ? `${stats.rtt_p50_ms.toFixed(2)} ms` : "--"}
                   </td>
-                  <td className="mono" style={{ padding: "12px" }}>± {stats.jitter_ms.toFixed(2)} ms</td>
+                  <td className="mono" style={{ padding: "12px", color: hasHardwareAccess ? "#fbbf24" : "var(--text-muted)" }}>
+                    {hasHardwareAccess && stats.count > 0 ? `${stats.rtt_p95_ms.toFixed(2)} ms` : "--"}
+                  </td>
+                  <td className="mono" style={{ padding: "12px", color: hasHardwareAccess ? "#f87171" : "var(--text-muted)", fontWeight: 600 }}>
+                    {hasHardwareAccess && stats.count > 0 ? `${stats.rtt_p99_ms.toFixed(2)} ms` : "--"}
+                  </td>
+                  <td className="mono" style={{ padding: "12px", color: "var(--text-dim)" }}>
+                    {hasHardwareAccess && stats.count > 0 ? `${stats.rtt_min_ms.toFixed(1)} / ${stats.rtt_max_ms.toFixed(1)} ms` : "--"}
+                  </td>
+                  <td className="mono" style={{ padding: "12px" }}>{hasHardwareAccess && stats.count > 0 ? `± ${stats.jitter_ms.toFixed(2)} ms` : "--"}</td>
                 </tr>
               ))}
             </tbody>
@@ -192,7 +246,12 @@ export const LatencyAnalyticsPage: React.FC<Props> = ({ telemetry, renderLatency
                 <Square style={{ width: "14px", height: "14px" }} /> Stop Session
               </button>
             ) : (
-              <button className="btn-primary" onClick={handleStartBenchmark}>
+              <button
+                className="btn-primary"
+                onClick={handleStartBenchmark}
+                disabled={!hasHardwareAccess || isRunning}
+                style={{ opacity: !hasHardwareAccess ? 0.5 : 1, cursor: !hasHardwareAccess ? "not-allowed" : "pointer" }}
+              >
                 <Play style={{ width: "14px", height: "14px" }} /> Start Benchmark
               </button>
             )}

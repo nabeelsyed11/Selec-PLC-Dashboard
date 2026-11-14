@@ -49,10 +49,31 @@ class AppState:
         self.modbus_client = SelecModbusClient(self.reg_map)
         self.sensor_processor = SensorDataProcessor()
         self.signals_snapshot: Dict[str, Any] = {}
-        self.current_machine_state: str = "IDLE"
+        self.current_machine_state: str = "IDLE" if settings.SIMULATION_MODE else "COMM_LOST"
         self.simulated_server: Optional[SimulatedModbusServer] = None
         self.broadcast_task: Optional[asyncio.Task] = None
         self.physics_task: Optional[asyncio.Task] = None
+
+        # Pre-populate initial signals with honest quality flags
+        init_quality = "SIMULATED" if settings.SIMULATION_MODE else "DISCONNECTED"
+        for sig in self.reg_map.discrete_signals:
+            self.signals_snapshot[sig.name] = {
+                "name": sig.name,
+                "raw_value": 0,
+                "value": 0,
+                "unit": "",
+                "quality": init_quality,
+                "group": sig.group,
+            }
+        for sig in self.reg_map.numerical_signals:
+            self.signals_snapshot[sig.name] = {
+                "name": sig.name,
+                "raw_value": 0,
+                "value": 0.0,
+                "unit": sig.engineering_unit,
+                "quality": init_quality,
+                "group": sig.group,
+            }
 
 
 app_state = AppState()
@@ -157,12 +178,38 @@ async def websocket_broadcast_loop():
         try:
             await asyncio.sleep(0.10)  # 10 Hz WebSocket streaming
             if ws_manager.active_connections:
+                is_sim = app_state.modbus_client.simulation_mode
+                is_conn = app_state.modbus_client.diagnostics.connected
+
+                # Strict state management when physical mode is active
+                if not is_sim:
+                    if not is_conn:
+                        app_state.current_machine_state = "COMM_LOST"
+                        alarms_manager.trigger_alarm(
+                            "PLC_COMM_LOST",
+                            "CRITICAL",
+                            f"Selec MiBRX-6M PLC not detected at {app_state.modbus_client.host}:{app_state.modbus_client.port}. Ethernet link down.",
+                        )
+                    else:
+                        alarms_manager.clear_alarm("PLC_COMM_LOST")
+
                 payload = {
                     "type": "TELEMETRY_UPDATE",
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "machine_state": app_state.current_machine_state,
+                    "simulation_mode": is_sim,
+                    "plc_connected": is_conn,
+                    "plc_host": app_state.modbus_client.host,
+                    "plc_port": app_state.modbus_client.port,
                     "signals": app_state.signals_snapshot,
-                    "latency": latency_subsystem.get_all_group_stats(),
+                    "latency": latency_subsystem.get_all_group_stats() if (is_sim or is_conn) else {
+                        "groups": {
+                            "fast_group": {"count": 0, "rtt_mean_ms": 0.0, "rtt_p50_ms": 0.0, "rtt_p95_ms": 0.0, "rtt_p99_ms": 0.0, "rtt_min_ms": 0.0, "rtt_max_ms": 0.0, "ingest_mean_ms": 0.0, "ingest_p95_ms": 0.0, "publish_mean_ms": 0.0, "update_interval_mean_ms": 0.0, "jitter_ms": 0.0},
+                            "medium_group": {"count": 0, "rtt_mean_ms": 0.0, "rtt_p50_ms": 0.0, "rtt_p95_ms": 0.0, "rtt_p99_ms": 0.0, "rtt_min_ms": 0.0, "rtt_max_ms": 0.0, "ingest_mean_ms": 0.0, "ingest_p95_ms": 0.0, "publish_mean_ms": 0.0, "update_interval_mean_ms": 0.0, "jitter_ms": 0.0},
+                            "slow_group": {"count": 0, "rtt_mean_ms": 0.0, "rtt_p50_ms": 0.0, "rtt_p95_ms": 0.0, "rtt_p99_ms": 0.0, "rtt_min_ms": 0.0, "rtt_max_ms": 0.0, "ingest_mean_ms": 0.0, "ingest_p95_ms": 0.0, "publish_mean_ms": 0.0, "update_interval_mean_ms": 0.0, "jitter_ms": 0.0},
+                        },
+                        "benchmark": {"active": False, "samples_collected": 0, "duration_seconds": 60, "elapsed_seconds": 0}
+                    },
                     "alarms": alarms_manager.get_active_list(),
                     "vibration": vibration_engine.get_latest_payload(),
                     "telemetry": machine_state_manager.get_system_telemetry(),

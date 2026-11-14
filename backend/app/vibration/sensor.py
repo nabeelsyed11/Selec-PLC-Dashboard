@@ -175,6 +175,24 @@ class VibrationAcquisitionEngine:
 
     def get_latest_payload(self) -> Dict[str, Any]:
         """Returns JSON-serializable dictionary for dashboard and API."""
+        # When physical mode is active and no real hardware sensor is configured, return true zero readings
+        if not settings.SIMULATION_MODE and isinstance(self.driver, MockVibrationDriver):
+            return {
+                "rms_g": 0.0,
+                "peak_g": 0.0,
+                "peak_to_peak_g": 0.0,
+                "crest_factor": 0.0,
+                "dominant_frequency_hz": 0.0,
+                "warning_alarm": False,
+                "critical_alarm": False,
+                "sample_rate_hz": self.sample_rate_hz,
+                "interface": "NO_HARDWARE_DETECTED",
+                "fft_frequencies": [],
+                "fft_magnitudes": [],
+                "waveform_sample": [0.0] * 64,
+                "sensor_connected": False,
+            }
+
         if not self.latest_metrics:
             return {
                 "rms_g": 0.0,

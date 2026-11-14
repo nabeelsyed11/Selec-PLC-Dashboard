@@ -61,7 +61,7 @@ export function App() {
       case "control":
         return <ControlPanelPage telemetry={telemetry} />;
       case "settings":
-        return <SettingsPage />;
+        return <SettingsPage telemetry={telemetry} />;
       default:
         return null;
     }
@@ -112,7 +112,64 @@ export function App() {
         </div>
 
         {/* Global Live Indicators */}
-        <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+          {/* Hardware Connection / Simulation Status Badge */}
+          {telemetry?.simulation_mode ? (
+            <div
+              style={{
+                padding: "4px 12px",
+                borderRadius: "20px",
+                fontSize: "12px",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                background: "rgba(168, 85, 247, 0.15)",
+                border: "1px solid rgba(168, 85, 247, 0.4)",
+                color: "#c084fc",
+              }}
+            >
+              <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#c084fc" }} />
+              <span>SIMULATION: ON (MOCK DATA)</span>
+            </div>
+          ) : telemetry?.plc_connected ? (
+            <div
+              style={{
+                padding: "4px 12px",
+                borderRadius: "20px",
+                fontSize: "12px",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                background: "rgba(34, 197, 94, 0.15)",
+                border: "1px solid rgba(34, 197, 94, 0.4)",
+                color: "#4ade80",
+              }}
+            >
+              <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#34d399", boxShadow: "0 0 8px #34d399" }} />
+              <span>PLC DETECTED ({telemetry.plc_host || "192.168.1.50"}:{telemetry.plc_port || 502})</span>
+            </div>
+          ) : (
+            <div
+              style={{
+                padding: "4px 12px",
+                borderRadius: "20px",
+                fontSize: "12px",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                background: "rgba(239, 68, 68, 0.15)",
+                border: "1px solid rgba(239, 68, 68, 0.4)",
+                color: "#f87171",
+              }}
+            >
+              <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#ef4444" }} />
+              <span>PLC NOT DETECTED (DISCONNECTED)</span>
+            </div>
+          )}
+
           {/* Machine State Pill */}
           <div
             style={{
@@ -135,12 +192,16 @@ export function App() {
                 backgroundColor:
                   machineState === "RUNNING"
                     ? "#34d399"
+                    : machineState === "COMM_LOST"
+                    ? "#ef4444"
                     : machineState === "FAULTED"
                     ? "#ef4444"
                     : "var(--primary-cyan)",
               }}
             />
-            <span style={{ color: "var(--text-main)" }}>{machineState}</span>
+            <span style={{ color: "var(--text-main)" }}>
+              {machineState === "COMM_LOST" ? "COMM LOST (PLC OFFLINE)" : machineState}
+            </span>
           </div>
 
           {/* WebSocket Link Status */}

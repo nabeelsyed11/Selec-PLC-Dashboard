@@ -88,6 +88,10 @@ class MockPlcState:
         self.plc_cycle_counter: int = 0
         self.last_update_monotonic: float = time.perf_counter()
 
+    def reset(self):
+        """Reset mock simulation physical state back to initial."""
+        self.__init__()
+
     def update_physics(self, dt: float):
         """Advance physical simulation by dt seconds."""
         self.plc_cycle_counter = (self.plc_cycle_counter + 1) % 65536

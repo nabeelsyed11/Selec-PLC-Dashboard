@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { TelemetryMessage } from "../types";
 import {
   Settings,
   Server,
@@ -11,7 +12,12 @@ import {
   HelpCircle,
   Cpu,
   Activity,
+  Radio,
 } from "lucide-react";
+
+interface Props {
+  telemetry?: TelemetryMessage | null;
+}
 
 interface PLCConfig {
   plc_host: string;
@@ -29,7 +35,7 @@ interface TestResult {
   has_exception?: boolean;
 }
 
-export const SettingsPage: React.FC = () => {
+export const SettingsPage: React.FC<Props> = ({ telemetry }) => {
   const [config, setConfig] = useState<PLCConfig>({
     plc_host: "192.168.1.50",
     plc_port: 502,
@@ -192,6 +198,68 @@ export const SettingsPage: React.FC = () => {
           >
             <RefreshCw style={{ width: "14px", height: "14px", animation: isLoading ? "spin 1s linear infinite" : "none" }} />
             Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* Real-time Hardware Detection Indicator */}
+      <div
+        className="glass-panel"
+        style={{
+          padding: "16px 20px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "12px",
+          borderLeft: telemetry?.simulation_mode
+            ? "6px solid #a855f7"
+            : telemetry?.plc_connected
+            ? "6px solid #22c55e"
+            : "6px solid #ef4444",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div
+            style={{
+              width: "14px",
+              height: "14px",
+              borderRadius: "50%",
+              backgroundColor: telemetry?.simulation_mode
+                ? "#c084fc"
+                : telemetry?.plc_connected
+                ? "#34d399"
+                : "#ef4444",
+              boxShadow: telemetry?.plc_connected ? "0 0 10px #34d399" : "none",
+            }}
+          />
+          <div>
+            <div style={{ fontSize: "14px", fontWeight: 700 }}>
+              {telemetry?.simulation_mode
+                ? "Current Status: SIMULATION MODE ACTIVE"
+                : telemetry?.plc_connected
+                ? `Current Status: PHYSICAL PLC DETECTED & ONLINE (${telemetry.plc_host || config.plc_host}:${telemetry.plc_port || config.plc_port})`
+                : `Current Status: PHYSICAL PLC NOT DETECTED (${telemetry?.plc_host || config.plc_host}:${telemetry?.plc_port || config.plc_port})`}
+            </div>
+            <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>
+              {telemetry?.simulation_mode
+                ? "The system is generating synthetic telemetry for testing. Real Modbus queries are disabled."
+                : telemetry?.plc_connected
+                ? "Physical Selec MiBRX-6M PLC is actively responding to Modbus TCP queries. Displaying 100% real values."
+                : "No response from physical PLC. Ensure the Ethernet cable is connected to Raspberry Pi and both devices are on the same subnet (e.g. 192.168.1.x). All dashboard values are held at 0."}
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <button
+            type="button"
+            onClick={handleTestConnection}
+            disabled={isTesting}
+            className="btn-secondary"
+            style={{ fontSize: "12px", padding: "6px 12px" }}
+          >
+            {isTesting ? "Testing Ping & Modbus..." : "Ping / Test Now"}
           </button>
         </div>
       </div>

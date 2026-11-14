@@ -77,6 +77,42 @@ class SelecModbusClient:
         self.timeout = timeout
         self.diagnostics.connected = False
 
+        if not simulation_mode:
+            global_mock_plc.reset()
+            if self._on_measurement_callback:
+                disconnected_meas: Dict[str, Any] = {}
+                now_iso = datetime.now(timezone.utc).isoformat()
+                now_mono = time.perf_counter()
+                for sig in self.config.discrete_signals:
+                    disconnected_meas[sig.name] = {
+                        "name": sig.name,
+                        "raw_value": 0,
+                        "value": 0,
+                        "unit": "",
+                        "quality": "DISCONNECTED",
+                        "group": sig.group,
+                        "t_request": now_iso,
+                        "t_response": None,
+                        "t_request_mono": now_mono,
+                        "t_response_mono": now_mono,
+                        "rtt_ms": 0.0,
+                    }
+                for sig in self.config.numerical_signals:
+                    disconnected_meas[sig.name] = {
+                        "name": sig.name,
+                        "raw_value": 0,
+                        "value": 0.0,
+                        "unit": sig.engineering_unit,
+                        "quality": "DISCONNECTED",
+                        "group": sig.group,
+                        "t_request": now_iso,
+                        "t_response": None,
+                        "t_request_mono": now_mono,
+                        "t_response_mono": now_mono,
+                        "rtt_ms": 0.0,
+                    }
+                self._on_measurement_callback(disconnected_meas)
+
         connected = await self.connect()
         return connected
 
@@ -258,6 +294,7 @@ class SelecModbusClient:
         total_rtt_ms = (t_finish_mono - t_request_mono) * 1000.0
 
         if all_ok and measurements:
+            self.diagnostics.connected = True
             self.diagnostics.last_global_success_monotonic = t_finish_mono
             grp_diag = self.diagnostics.groups.get(group_name)
             if grp_diag:
@@ -268,9 +305,47 @@ class SelecModbusClient:
                 self._on_measurement_callback(measurements)
             return True
         else:
+            if not self.simulation_mode:
+                self.diagnostics.connected = False
             grp_diag = self.diagnostics.groups.get(group_name)
             if grp_diag:
                 grp_diag.record_failure("Read error or timeout", t_finish_mono)
+
+            # When physical PLC is disconnected, report true DISCONNECTED state (no fake/stale values)
+            if not self.simulation_mode and self._on_measurement_callback:
+                disconnected_meas: Dict[str, Any] = {}
+                if group_name == "fast_group":
+                    for sig in self.config.discrete_signals:
+                        if sig.group == group_name:
+                            disconnected_meas[sig.name] = {
+                                "name": sig.name,
+                                "raw_value": 0,
+                                "value": 0,
+                                "unit": "",
+                                "quality": "DISCONNECTED",
+                                "group": group_name,
+                                "t_request": t_request_utc,
+                                "t_response": None,
+                                "t_request_mono": t_request_mono,
+                                "t_response_mono": t_finish_mono,
+                                "rtt_ms": 0.0,
+                            }
+                for block in self.group_blocks.get(group_name, []):
+                    for sig in block["signals"]:
+                        disconnected_meas[sig.name] = {
+                            "name": sig.name,
+                            "raw_value": 0,
+                            "value": 0.0,
+                            "unit": sig.engineering_unit,
+                            "quality": "DISCONNECTED",
+                            "group": group_name,
+                            "t_request": t_request_utc,
+                            "t_response": None,
+                            "t_request_mono": t_request_mono,
+                            "t_response_mono": t_finish_mono,
+                            "rtt_ms": 0.0,
+                        }
+                self._on_measurement_callback(disconnected_meas)
             return False
 
     async def _read_discrete_inputs(self, address: int, count: int) -> List[bool]:
@@ -280,8 +355,12 @@ class SelecModbusClient:
             if resp.isError():
                 raise ModbusException(f"Modbus error reading discrete inputs: {resp}")
             return resp.bits[:count]
-        # In-process simulation fallback
-        return [global_mock_plc.read_discrete_input(address + i) for i in range(count)]
+
+        # ONLY simulate if explicitly in simulation mode!
+        if self.simulation_mode:
+            return [global_mock_plc.read_discrete_input(address + i) for i in range(count)]
+        
+        raise ModbusException(f"PLC not connected at {self.host}:{self.port}")
 
     async def _read_holding_registers(self, address: int, count: int) -> List[int]:
         """Low-level read holding registers FC 03."""
@@ -291,8 +370,11 @@ class SelecModbusClient:
                 raise ModbusException(f"Modbus error reading holding registers: {resp}")
             return resp.registers[:count]
 
-        # In-process simulation fallback: decode simulated state into raw 16-bit register words
-        return self._simulate_holding_registers(address, count)
+        # ONLY simulate if explicitly in simulation mode!
+        if self.simulation_mode:
+            return self._simulate_holding_registers(address, count)
+
+        raise ModbusException(f"PLC not connected at {self.host}:{self.port}")
 
     def _simulate_holding_registers(self, address: int, count: int) -> List[int]:
         """Maps global_mock_plc physical state to raw 16-bit Modbus registers."""

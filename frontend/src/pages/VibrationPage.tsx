@@ -84,7 +84,11 @@ export const VibrationPage: React.FC<Props> = ({ telemetry }) => {
 
         <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
           <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Health:</span>
-          {vibration.critical_alarm ? (
+          {!telemetry.simulation_mode && vibration.interface === "NO_HARDWARE_DETECTED" ? (
+            <span className="badge-quality-disconnected" style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 600 }}>
+              NO SENSOR ATTACHED
+            </span>
+          ) : vibration.critical_alarm ? (
             <span className="badge-quality-disconnected" style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 600 }}>
               CRITICAL VIBRATION
             </span>
@@ -99,6 +103,27 @@ export const VibrationPage: React.FC<Props> = ({ telemetry }) => {
           )}
         </div>
       </div>
+
+      {/* Disconnection Warning */}
+      {!telemetry.simulation_mode && vibration.interface === "NO_HARDWARE_DETECTED" && (
+        <div
+          style={{
+            padding: "14px 18px",
+            borderRadius: "8px",
+            background: "rgba(239, 68, 68, 0.12)",
+            border: "1px solid rgba(239, 68, 68, 0.35)",
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+          }}
+        >
+          <AlertTriangle style={{ width: "20px", height: "20px", color: "#f87171", flexShrink: 0 }} />
+          <div style={{ fontSize: "13px" }}>
+            <span style={{ fontWeight: 700, color: "#f87171" }}>Physical Mode Active:</span>{" "}
+            No physical I2C accelerometer (ADXL345/MPU6050) was detected on Raspberry Pi GPIO pins 2 & 3. Simulated waveforms are disabled so no false vibration is displayed. Connect a sensor to Pi GPIO or turn Simulation ON in <strong>PLC Settings</strong> to test.
+          </div>
+        </div>
+      )}
 
       {/* Metrics Grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>

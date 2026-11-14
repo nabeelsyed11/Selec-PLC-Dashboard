@@ -92,14 +92,18 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
         <div style={{ display: "flex", gap: "24px", flexWrap: "wrap" }}>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>Modbus Link</div>
-            <div style={{ fontWeight: 600, color: diagnostics.connected ? "#34d399" : "#f87171" }}>
-              {diagnostics.connected ? "ONLINE (Port 5020)" : "DISCONNECTED"}
+            <div style={{ fontWeight: 600, color: telemetry.simulation_mode ? "#c084fc" : diagnostics.connected ? "#34d399" : "#f87171" }}>
+              {telemetry.simulation_mode
+                ? "SIMULATION (MOCK)"
+                : diagnostics.connected
+                ? `PLC ONLINE (${telemetry.plc_host || "192.168.1.50"}:${telemetry.plc_port || 502})`
+                : "PLC NOT DETECTED"}
             </div>
           </div>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>Modbus RTT (P50)</div>
             <div className="mono" style={{ fontWeight: 600, color: "var(--primary-cyan)" }}>
-              {fastLatency ? `${fastLatency.rtt_p50_ms.toFixed(1)} ms` : "--"}
+              {diagnostics.connected || telemetry.simulation_mode ? (fastLatency ? `${fastLatency.rtt_p50_ms.toFixed(1)} ms` : "--") : "--"}
             </div>
           </div>
           <div style={{ textAlign: "right" }}>
@@ -110,6 +114,28 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
           </div>
         </div>
       </div>
+
+      {/* Disconnection Notice Banner */}
+      {!telemetry.simulation_mode && !diagnostics.connected && (
+        <div
+          style={{
+            padding: "16px 20px",
+            borderRadius: "8px",
+            background: "rgba(239, 68, 68, 0.12)",
+            border: "1px solid rgba(239, 68, 68, 0.35)",
+            display: "flex",
+            alignItems: "center",
+            gap: "14px",
+          }}
+        >
+          <AlertTriangle style={{ width: "24px", height: "24px", color: "#f87171", flexShrink: 0 }} />
+          <div style={{ fontSize: "13px", lineHeight: "1.5" }}>
+            <strong style={{ color: "#f87171", display: "block" }}>Physical Selec PLC Not Detected:</strong>
+            Simulation is <span style={{ fontWeight: 700 }}>OFF</span> and no physical PLC response was received at{" "}
+            <code className="mono">{telemetry.plc_host || "192.168.1.50"}:{telemetry.plc_port || 502}</code>. All live signals are held at zero to guarantee no false telemetry is displayed. Verify your Ethernet cable connection, or configure the IP in <strong>PLC Settings</strong>.
+          </div>
+        </div>
+      )}
 
       {/* Primary KPI Grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px" }}>
