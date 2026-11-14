@@ -1,48 +1,51 @@
 ---
 updated: 2026-11-14T15:00:00Z
-health: GOOD
-status: Complete & Verified
 ---
 
-# Project State: Selec MiBRX-6M Industrial IoT Monitoring, Latency Measurement and Control Dashboard
+# Project State
 
 ## Current Position
 
-**Milestone:** industrial-iot-v1
-**Phase:** 10 - Deployment & Commissioning
-**Status:** Complete & Verified
-**Health:** GOOD (100% Verified, 0 Blockers, 0 Errors)
-**Plan:** All 10 phases executed, tested, and validated.
+**Milestone:** v1.0.0-production-ready
+**Phase:** Phase 5 - Hardware Disconnection Failsafe & Deployment Hardening
+**Status:** complete & verified
+**Plan:** All planned phases verified with empirical test evidence
 
 ## Last Action
 
-Completed full project implementation and production hardening across all 10 phases:
-1. Python FastAPI async backend with PyModbus client and connection recovery.
-2. Latency monitoring subsystem with microsecond monotonic clock decomposition and statistical percentiles (P50, P95, P99).
-3. Decoupled vibration acquisition engine with RMS, Peak, Pk-Pk, and FFT frequency spectrum extraction.
-4. Safe, disabled-by-default remote control architecture with strict allowlist and immutable SQLite audit logging.
-5. High-fidelity in-process simulation mode with realistic physics, faults, and thermal inertia.
-6. React + TypeScript + Vite responsive industrial web dashboard with all 9 operational pages.
-7. Automated test cases passing cleanly.
-8. Complete deployment bundle with systemd service unit, Docker Compose, commissioning checklist, hardware verification checklist, troubleshooting guide, and security hardening guide.
-9. Strict zero-false-data enforcement in physical mode with instant `PLC DETECTED` / `PLC NOT DETECTED` hardware link badges.
-10. Cross-platform one-click launch scripts (`start.sh` with pure POSIX syntax, and `start.bat` with auto-venv cross-platform sanitization).
+- Hardened `backend/app/plc/modbus_client.py` with an `asyncio.Lock` reconnect guard and 3.0s exponential throttle to eliminate socket thrashing on Windows and Linux.
+- Added live hardware connection indicators across all 9 dashboard tabs (Overview, Live, Latency, Vibration, Production, Energy, Alarms, Safe Control, Settings).
+- Verified complete GSD validation suite (`validate-all.ps1`) with 0 errors and 0 warnings.
+- Synchronized and verified all changes on GitHub branch `main`.
+
+## Next Steps
+
+1. Connect physical Ethernet patch cable between Selec MiBRX-6M PLC and Raspberry Pi 5.
+2. Verify PLC IP matches `192.168.1.50` on the `PLC Settings` dashboard tab.
+3. Observe live green `PLC DETECTED (192.168.1.50:502)` badge and real field telemetry.
 
 ## Active Decisions
 
 | Decision | Choice | Made | Affects |
-|---|---|---|---|
-| Modbus Library | PyModbus 3.6+ async client with reconnect throttling | 2026-10-12 | Modbus polling layer |
-| Database Engine | SQLite with Write-Ahead Logging (WAL) and 1.0s buffer | 2026-10-12 | SD-card persistence layer |
-| Latency Clocks | `time.perf_counter()` for interval RTT + ISO8601 UTC for event logging | 2026-10-12 | Latency measurement accuracy |
-| Vibration Decoupling | Independent background acquisition thread/async task with ring buffer | 2026-10-12 | High-speed sampling decoupled from PLC poll |
-| Control Safety | Disabled by default + strict register allowlist + 2-step confirmation modal | 2026-10-12 | Machine safety and remote control operations |
-| Telemetry Integrity | Strict zero-false-data fallback suppression when physical PLC is offline | 2026-11-14 | SCADA data truthfulness |
-| Frontend Stack | React 19 + TypeScript + Vite + Modern Industrial CSS Tokens + Lucide Icons | 2026-10-12 | Web dashboard |
+|----------|--------|------|---------|
+| DECISION-001 | SQLite WAL with In-Memory Buffer | 2026-10-12 | SD Card Protection on Raspberry Pi |
+| DECISION-002 | Zero-False-Data Enforcement | 2026-11-14 | Integrity of Physical SCADA Monitoring |
+| DECISION-003 | Modbus Reconnect Throttling | 2026-11-14 | Network Stack Stability |
+| DECISION-004 | Pre-compiled React Distribution | 2026-11-14 | Zero-Node Dependency on Raspberry Pi |
 
 ## Blockers
 
-None. Application is deployment-ready on Raspberry Pi 5 and testable offline via high-fidelity simulation.
+None. All systems operational.
+
+## Concerns
+
+None. All 5 subagents, 12 skills, 27 workflows, and 24 templates are fully validated.
+
+## Session Context
+
+- Physical hardware default: `192.168.1.50:502`, Unit ID: `1`.
+- Virtual simulation default: `127.0.0.1:5020`.
+- All production assets built in `frontend/dist/`.
 
 ---
 
