@@ -7,7 +7,7 @@
 set -e
 
 # Change directory to the project root regardless of where script is called
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # ANSI Colors for Industrial Console
@@ -22,7 +22,8 @@ NC='\033[0m' # No Color
 # Trap errors so the terminal window NEVER closes automatically on failure
 pause_on_exit() {
     local code=$?
-    if [ $code -ne 0 ]; then
+    # Exit codes 0, 130 (SIGINT / Ctrl+C), and 143 (SIGTERM) are normal terminations
+    if [ $code -ne 0 ] && [ $code -ne 130 ] && [ $code -ne 143 ]; then
         echo ""
         echo -e "${RED}${BOLD}[ERROR] Script stopped with exit code $code.${NC}"
         echo "Check the error messages above to resolve the issue."
@@ -40,9 +41,9 @@ echo -e "${NC}"
 
 # 1. Check Python 3 Availability
 echo -e "${BLUE}[1/5] Checking Python environment...${NC}"
-if command -v python3 &>/dev/null; then
+if command -v python3 >/dev/null 2>&1; then
     PY_BIN="python3"
-elif command -v python &>/dev/null; then
+elif command -v python >/dev/null 2>&1; then
     PY_BIN="python"
 else
     echo -e "${RED}[ERROR] Python 3 was not found! Please install it with:${NC}"
@@ -101,7 +102,7 @@ fi
 echo -e "${BLUE}[4/5] Checking backend dependencies...${NC}"
 NEED_INSTALL=false
 
-if ! ./venv/bin/python -c "import fastapi, uvicorn, pymodbus" &>/dev/null; then
+if ! ./venv/bin/python -c "import fastapi, uvicorn, pymodbus, pydantic_settings, aiosqlite, sqlalchemy, yaml, numpy, scipy, psutil" >/dev/null 2>&1; then
     NEED_INSTALL=true
 fi
 
@@ -112,7 +113,7 @@ if [ "$NEED_INSTALL" = true ]; then
         echo ""
         echo -e "${RED}${BOLD}[ERROR] Failed to install Python dependencies!${NC}"
         echo -e "${YELLOW}If installation failed due to C-compilation, run:${NC}"
-        echo -e "    ${BOLD}sudo apt install -y build-essential libatlas-base-dev${NC}"
+        echo -e "    ${BOLD}sudo apt install -y build-essential libatlas-base-dev libopenblas-dev${NC}"
         echo ""
         read -r -p "Press Enter to close..." dummy || true
         exit 1
@@ -131,12 +132,12 @@ else
 fi
 
 # Check if port 8000 is already occupied
-if command -v ss &>/dev/null; then
+if command -v ss >/dev/null 2>&1; then
     if ss -tuln 2>/dev/null | grep -q ":8000 "; then
         echo ""
         echo -e "${YELLOW}[WARNING] Port 8000 is already in use by another process!${NC}"
         echo -e "${YELLOW}If a previous dashboard or service is running, stop it first:${NC}"
-        echo -e "    ${BOLD}sudo kill -9 \$(sudo lsof -t -i:8000)${NC}"
+        echo -e "    ${BOLD}sudo kill -9 \$(sudo lsof -t -i:8000 2>/dev/null)${NC}"
         echo ""
     fi
 fi
@@ -145,6 +146,13 @@ fi
 LOCAL_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 if [ -z "$LOCAL_IP" ]; then
     LOCAL_IP="127.0.0.1"
+fi
+
+# If on Raspberry Pi desktop GUI, open browser in background after server boots
+if [ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]; then
+    if command -v xdg-open >/dev/null 2>&1; then
+        (sleep 2 && xdg-open "http://localhost:8000" >/dev/null 2>&1) &
+    fi
 fi
 
 echo ""
@@ -158,14 +166,20 @@ echo -e "  * Stop Server:      ${YELLOW}Press Ctrl + C${NC}"
 echo -e "${GREEN}${BOLD}======================================================================${NC}"
 echo ""
 
+# Disable errexit before running server so Ctrl+C (code 130) is handled gracefully
+set +e
+
 # Run Uvicorn directly (WITHOUT exec so the terminal stays open if it exits)
 ./venv/bin/python -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 SERVER_EXIT_CODE=$?
 
-if [ $SERVER_EXIT_CODE -ne 0 ]; then
+if [ $SERVER_EXIT_CODE -ne 0 ] && [ $SERVER_EXIT_CODE -ne 130 ] && [ $SERVER_EXIT_CODE -ne 143 ]; then
     echo ""
     echo -e "${RED}[ERROR] Server stopped with error code $SERVER_EXIT_CODE.${NC}"
+else
+    echo ""
+    echo -e "${GREEN}Dashboard server stopped cleanly.${NC}"
 fi
 
 echo ""
-read -r -p "Server stopped. Press Enter to close this window..." dummy || true
+read -r -p "Press Enter to close this window..." dummy || true

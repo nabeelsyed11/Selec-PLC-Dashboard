@@ -38,8 +38,16 @@ if not exist ".env" (
 
 if not exist "data" mkdir data
 
-REM 3. Virtual Environment Check & Setup
+REM 3. Virtual Environment Check & Setup (clean up Linux/Pi-copied venv if present)
 echo [3/5] Verifying Python virtual environment (venv)...
+if exist "venv" (
+    if not exist "venv\Scripts\python.exe" (
+        echo       Detected non-Windows or corrupted virtual environment.
+        echo       Cleaning and recreating Windows venv...
+        rd /s /q venv
+    )
+)
+
 if not exist "venv\Scripts\python.exe" (
     echo       Creating virtual environment...
     python -m venv venv
@@ -51,9 +59,9 @@ if not exist "venv\Scripts\python.exe" (
 )
 echo       [OK] Virtual environment verified.
 
-REM 4. Dependencies
+REM 4. Dependencies Check
 echo [4/5] Checking dependencies...
-venv\Scripts\python -c "import fastapi, uvicorn, pymodbus" >nul 2>nul
+venv\Scripts\python -c "import fastapi, uvicorn, pymodbus, pydantic_settings, aiosqlite, sqlalchemy, yaml, numpy, scipy, psutil" >nul 2>nul
 if %ERRORLEVEL% neq 0 (
     echo       Installing dependencies from backend\requirements.txt...
     venv\Scripts\python -m pip install --upgrade pip --quiet
@@ -69,6 +77,15 @@ if exist "frontend\dist\index.html" (
     echo       [OK] Pre-compiled React dashboard verified [frontend\dist].
 ) else (
     echo       [WARNING] Pre-compiled frontend not found in frontend\dist!
+)
+
+REM Check if port 8000 is already in use
+netstat -ano | findstr ":8000 " | findstr "LISTENING" >nul 2>nul
+if %ERRORLEVEL% equ 0 (
+    echo.
+    echo [WARNING] Port 8000 appears to be in use by another application.
+    echo If another dashboard instance is already running, please close it first.
+    echo.
 )
 
 echo.
@@ -87,4 +104,6 @@ start "" http://localhost:8000
 REM Run the Uvicorn server with backend app directory
 venv\Scripts\python -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
 
+echo.
+echo Dashboard server stopped.
 pause
