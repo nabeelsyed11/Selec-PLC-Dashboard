@@ -191,6 +191,21 @@ async def physics_loop():
             logger.debug(f"Physics loop error: {e}")
 
 
+def start_physics_task():
+    """Ensure simulation physics worker is active."""
+    if not app_state.physics_task or app_state.physics_task.done():
+        app_state.physics_task = asyncio.create_task(physics_loop())
+        logger.info("Simulation physics worker started.")
+
+
+def stop_physics_task():
+    """Cancel simulation physics worker."""
+    if app_state.physics_task and not app_state.physics_task.done():
+        app_state.physics_task.cancel()
+        app_state.physics_task = None
+        logger.info("Simulation physics worker stopped.")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and graceful shutdown."""

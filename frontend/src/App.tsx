@@ -8,6 +8,7 @@ import { ProductionPage } from "./pages/ProductionPage";
 import { EnergyPage } from "./pages/EnergyPage";
 import { AlarmsPage } from "./pages/AlarmsPage";
 import { ControlPanelPage } from "./pages/ControlPanelPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 import {
   LayoutDashboard,
@@ -20,6 +21,7 @@ import {
   ShieldCheck,
   Radio,
   Cpu,
+  Settings,
 } from "lucide-react";
 
 export function App() {
@@ -35,6 +37,7 @@ export function App() {
     { id: "energy", label: "Energy Monitor", icon: Zap },
     { id: "alarms", label: "Alarms & Events", icon: Bell, badge: telemetry?.alarms.length },
     { id: "control", label: "Safe Control", icon: ShieldCheck },
+    { id: "settings", label: "PLC Settings", icon: Settings },
   ];
 
   const machineState = telemetry?.machine_state || "COMM_LOST";
@@ -57,6 +60,8 @@ export function App() {
         return <AlarmsPage telemetry={telemetry} />;
       case "control":
         return <ControlPanelPage telemetry={telemetry} />;
+      case "settings":
+        return <SettingsPage />;
       default:
         return null;
     }
@@ -158,6 +163,28 @@ export function App() {
           <div className="mono" style={{ fontSize: "12px", color: "#a78bfa" }}>
             DOM Lag: <strong>{renderLatencyMs.toFixed(1)} ms</strong>
           </div>
+
+          {/* Quick PLC Settings Button */}
+          <button
+            onClick={() => setActiveTab("settings")}
+            title="Configure PLC IP and Connection"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "5px 12px",
+              borderRadius: "6px",
+              border: activeTab === "settings" ? "1px solid var(--primary-cyan)" : "1px solid var(--border-subtle)",
+              background: activeTab === "settings" ? "rgba(6, 182, 212, 0.2)" : "rgba(255, 255, 255, 0.06)",
+              color: activeTab === "settings" ? "var(--primary-cyan)" : "#fff",
+              fontSize: "12px",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            <Settings style={{ width: "14px", height: "14px" }} />
+            <span>PLC Settings</span>
+          </button>
         </div>
       </header>
 

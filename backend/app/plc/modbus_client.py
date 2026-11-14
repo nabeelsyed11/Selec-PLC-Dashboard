@@ -53,6 +53,33 @@ class SelecModbusClient:
         self._running = False
         self._on_measurement_callback: Optional[Callable[[Dict[str, Any]], None]] = None
 
+    async def reconfigure(
+        self,
+        host: str,
+        port: int,
+        unit_id: int,
+        simulation_mode: bool,
+        timeout: float = 1.5,
+    ) -> bool:
+        """Dynamically update connection parameters and reconnect on the fly."""
+        logger.info(f"Reconfiguring Modbus client to {host}:{port} (Unit {unit_id}, Sim: {simulation_mode})")
+        if self.client:
+            try:
+                self.client.close()
+            except Exception:
+                pass
+            self.client = None
+
+        self.host = host
+        self.port = port
+        self.unit_id = unit_id
+        self.simulation_mode = simulation_mode
+        self.timeout = timeout
+        self.diagnostics.connected = False
+
+        connected = await self.connect()
+        return connected
+
     def set_measurement_callback(self, callback: Callable[[Dict[str, Any]], None]):
         """Register callback invoked whenever new measurements are ingested."""
         self._on_measurement_callback = callback
@@ -78,16 +105,21 @@ class SelecModbusClient:
         try:
             if not self.client:
                 self.client = AsyncModbusTcpClient(self.host, port=self.port, timeout=self.timeout)
-            connected = await self.client.connect()
+            # Use asyncio.wait_for with a short timeout so startup never hangs if PLC is offline/unreachable
+            connected = await asyncio.wait_for(self.client.connect(), timeout=min(2.0, self.timeout))
             self.diagnostics.connected = bool(connected)
             if connected:
                 logger.info(f"Connected to physical Selec MiBRX-6M PLC at {self.host}:{self.port}")
             else:
-                logger.warning(f"Failed to connect to PLC at {self.host}:{self.port}")
+                logger.warning(f"Failed to connect to PLC at {self.host}:{self.port}. Polling loop will retry.")
             return bool(connected)
+        except asyncio.TimeoutError:
+            self.diagnostics.connected = False
+            logger.warning(f"Connection timed out to PLC at {self.host}:{self.port}. Background polling will keep retrying.")
+            return False
         except Exception as e:
             self.diagnostics.connected = False
-            logger.error(f"Socket connection error to PLC {self.host}:{self.port}: {e}")
+            logger.warning(f"Socket connection error to PLC {self.host}:{self.port}: {e}. Background polling will keep retrying.")
             return False
 
     async def disconnect(self):
@@ -102,7 +134,10 @@ class SelecModbusClient:
     async def start_polling(self):
         """Start independent polling loops for each configured group."""
         self._running = True
-        await self.connect()
+        try:
+            await self.connect()
+        except Exception as e:
+            logger.warning(f"Initial PLC connection failed: {e}. Worker loops will retry in background.")
 
         for grp_name, grp_cfg in self.config.polling_groups.items():
             if grp_cfg.enabled:

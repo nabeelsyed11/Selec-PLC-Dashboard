@@ -91,7 +91,7 @@ fi
 
 if [ "$NEED_INSTALL" = true ]; then
     echo -e "      ${YELLOW}Installing required Python packages from backend/requirements.txt...${NC}"
-    ./venv/bin/pip install --upgrade pip --quiet
+    ./venv/bin/pip install --upgrade pip
     ./venv/bin/pip install -r backend/requirements.txt
     echo -e "      ${GREEN}[OK] Dependencies successfully installed.${NC}"
 else
