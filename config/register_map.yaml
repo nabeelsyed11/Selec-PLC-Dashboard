@@ -131,6 +131,18 @@ discrete_signals:
 # Analog & Numerical Registers (Holding Registers FC 03)
 # ------------------------------------------------------------------------------
 numerical_signals:
+  # 0. PLC Input Address IW0 (Modbus 40768)
+  - name: "plc_input_iw0"
+    description: "Selec PLC Input Register IW0 (Modbus 40768)"
+    address: 767
+    function_code: 3
+    data_type: "int16"
+    byte_order: "big"
+    scaling_factor: 1.0         # Integer format (1 count = 1 integer)
+    offset: 0.0
+    engineering_unit: "raw"
+    group: "fast_group"
+
   # 1. Load Cell
   - name: "load_cell_weight"
     description: "Load cell force / weight on platform"

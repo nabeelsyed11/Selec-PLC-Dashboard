@@ -107,6 +107,32 @@ async def test_modbus_connection(host: str, port: int, unit_id: int, start_reg: 
     except Exception as e:
         print(f"  [!] Exception reading holding registers: {e}")
 
+    # 3. Dedicated Probe for PLC Input Address IW0 (Modbus 40768)
+    print(f"\n[*] Probing PLC Input Address IW0 (Modbus 40768)...")
+    iw0_found = False
+    for addr_cand in [767, 768, 40767, 40768]:
+        try:
+            r = await call_modbus(client.read_holding_registers, address=addr_cand, count=1, unit_id=unit_id)
+            if not r.isError() and hasattr(r, "registers") and r.registers:
+                val = r.registers[0]
+                s_val = val if val < 32768 else val - 65536
+                print(f"  [+] FC 03 Succeeded at Address {addr_cand} -> IW0 Value: {s_val} (HEX: 0x{val:04X})")
+                iw0_found = True
+                break
+            else:
+                r4 = await call_modbus(client.read_input_registers, address=addr_cand, count=1, unit_id=unit_id)
+                if not r4.isError() and hasattr(r4, "registers") and r4.registers:
+                    val = r4.registers[0]
+                    s_val = val if val < 32768 else val - 65536
+                    print(f"  [+] FC 04 Succeeded at Address {addr_cand} -> IW0 Value: {s_val} (HEX: 0x{val:04X})")
+                    iw0_found = True
+                    break
+        except Exception:
+            pass
+
+    if not iw0_found:
+        print(f"  [-] Address 767/768/40768 not responding on default probe.")
+
     client.close()
     print(f"\n[+] Diagnostic test completed successfully.\n")
     return 0
