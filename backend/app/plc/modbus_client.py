@@ -167,7 +167,12 @@ class SelecModbusClient:
             logger.info("Using high-fidelity in-process Selec PLC simulation engine.")
             return True
 
-        # Physical hardware connection - Throttle reconnection attempts to at most once every 3.0s unless forced
+        # Physical hardware connection - If already connected, do not tear down healthy socket
+        if self.client and getattr(self.client, "connected", False) and not force:
+            self.diagnostics.connected = True
+            return True
+
+        # Throttle reconnection attempts to at most once every 3.0s unless forced
         now = time.monotonic()
         if not force and now - self._last_reconnect_time < 3.0:
             return self.diagnostics.connected
