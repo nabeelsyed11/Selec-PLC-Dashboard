@@ -11,13 +11,24 @@ echo "======================================================================"
 echo "    Selec PLC IW0 (Address 40768) Simple Live Dashboard              "
 echo "======================================================================"
 
-if [ -f "venv/bin/python" ]; then
-    PYTHON_EXEC="./venv/bin/python"
-elif command -v python3 >/dev/null 2>&1; then
-    PYTHON_EXEC="python3"
-else
-    echo "[ERROR] Python not found!"
-    exit 1
+# Locate or create Linux virtual environment (venv)
+if [ ! -f "$SCRIPT_DIR/venv/bin/python" ]; then
+    echo "[*] Initializing Python virtual environment..."
+    python3 -m venv "$SCRIPT_DIR/venv"
+    "$SCRIPT_DIR/venv/bin/pip" install --upgrade pip
+    if [ -f "$SCRIPT_DIR/backend/requirements.txt" ]; then
+        "$SCRIPT_DIR/venv/bin/pip" install -r "$SCRIPT_DIR/backend/requirements.txt"
+    else
+        "$SCRIPT_DIR/venv/bin/pip" install fastapi uvicorn pymodbus
+    fi
+fi
+
+PYTHON_EXEC="$SCRIPT_DIR/venv/bin/python"
+
+# Verify fastapi is installed in venv
+if ! "$PYTHON_EXEC" -c "import fastapi, uvicorn, pymodbus" >/dev/null 2>&1; then
+    echo "[*] Installing required packages into venv (fastapi, uvicorn, pymodbus)..."
+    "$SCRIPT_DIR/venv/bin/pip" install fastapi uvicorn pymodbus
 fi
 
 PORT="${PORT:-8080}"

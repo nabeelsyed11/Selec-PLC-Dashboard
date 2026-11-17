@@ -16,13 +16,24 @@ import time
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 import uvicorn
-
-# Add backend directory to sys.path
-backend_path = Path(__file__).resolve().parent / "backend"
-sys.path.insert(0, str(backend_path))
-
 from pymodbus.client import AsyncModbusTcpClient
-from app.plc.modbus_client import call_modbus
+
+# Version-agnostic PyModbus caller (supports device_id, slave, unit)
+def call_modbus(method, *args, unit_id: int = 1, **kwargs):
+    import inspect
+    try:
+        params = inspect.signature(method).parameters
+        if "device_id" in params:
+            kwargs["device_id"] = unit_id
+        elif "slave" in params:
+            kwargs["slave"] = unit_id
+        elif "unit" in params:
+            kwargs["unit"] = unit_id
+        else:
+            kwargs["device_id"] = unit_id
+    except Exception:
+        kwargs["device_id"] = unit_id
+    return method(*args, **kwargs)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("simple_dashboard")
