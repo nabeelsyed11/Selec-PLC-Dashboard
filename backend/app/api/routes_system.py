@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from pymodbus.client import AsyncModbusTcpClient
 
 from app.core.config import settings, BASE_DIR
+from app.plc.modbus_client import call_modbus
 from app.machine.state import machine_state_manager
 
 logger = logging.getLogger("api.system")
@@ -113,25 +114,55 @@ async def test_plc_connection(req: PLCTestRequest):
                 "rtt_ms": None,
             }
         
-        # Test reading holding register 0 (Load Cell)
-        r_resp = await asyncio.wait_for(
-            client.read_holding_registers(address=0, count=1, slave=req.plc_unit_id),
-            timeout=req.timeout_seconds,
-        )
+        # Test reading holding register 0 (or 1 in case of 1-based addressing)
+        r_resp = None
+        used_addr = 0
+        for test_addr in [0, 1]:
+            try:
+                test_r = await asyncio.wait_for(
+                    call_modbus(client.read_holding_registers, address=test_addr, count=1, unit_id=req.plc_unit_id),
+                    timeout=req.timeout_seconds,
+                )
+                if not test_r.isError():
+                    r_resp = test_r
+                    used_addr = test_addr
+                    break
+                elif r_resp is None:
+                    r_resp = test_r
+            except Exception:
+                pass
+
+        if r_resp is None:
+            try:
+                r_resp = await asyncio.wait_for(
+                    call_modbus(client.read_input_registers, address=0, count=1, unit_id=req.plc_unit_id),
+                    timeout=req.timeout_seconds,
+                )
+            except Exception:
+                pass
+
         t_elapsed_ms = (time.perf_counter() - t0) * 1000.0
         client.close()
 
-        if r_resp.isError():
+        if r_resp is not None and not r_resp.isError() and hasattr(r_resp, "registers"):
             return {
                 "success": True,
-                "message": f"TCP connected in {t_elapsed_ms:.1f}ms, but PLC returned Modbus Exception: {r_resp}. Verify Slave ID.",
+                "message": f"Successfully connected to Selec PLC at {req.plc_host}:{req.plc_port}! (RTT: {t_elapsed_ms:.1f} ms, Reg {used_addr}={r_resp.registers[0]})",
+                "rtt_ms": round(t_elapsed_ms, 2),
+                "has_exception": False,
+            }
+
+        if r_resp is not None and r_resp.isError():
+            return {
+                "success": True,
+                "message": f"TCP connected in {t_elapsed_ms:.1f}ms! PLC responded with Modbus Exception: {r_resp}. Check Unit ID or register map.",
                 "rtt_ms": round(t_elapsed_ms, 2),
                 "has_exception": True,
             }
 
         return {
             "success": True,
-            "message": f"Successfully connected to Selec PLC at {req.plc_host}:{req.plc_port}! (RTT: {t_elapsed_ms:.1f} ms, Reg 0={r_resp.registers[0]})",
+            "message": f"TCP connection to {req.plc_host}:{req.plc_port} succeeded in {t_elapsed_ms:.1f}ms!",
             "rtt_ms": round(t_elapsed_ms, 2),
             "has_exception": False,
         }

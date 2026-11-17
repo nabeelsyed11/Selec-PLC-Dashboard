@@ -16,6 +16,7 @@ sys.path.insert(0, str(backend_path))
 
 from pymodbus.client import AsyncModbusTcpClient
 from app.plc.decoder import decode_16bit_uint, decode_32bit_uint, decode_32bit_float
+from app.plc.modbus_client import call_modbus
 
 
 async def test_modbus_connection(host: str, port: int, unit_id: int, start_reg: int, count: int):
@@ -42,14 +43,19 @@ async def test_modbus_connection(host: str, port: int, unit_id: int, start_reg: 
 
     print(f"[+] Connected successfully in {connect_time_ms:.2f} ms\n")
 
-    # 1. Read Discrete Inputs (FC 02)
+    # 1. Read Discrete Inputs (FC 02) with FC 01 fallback
     print(f"[*] Reading Discrete Inputs (FC 02) from address 0 to 7...")
     t_req = time.perf_counter()
     try:
-        di_resp = await client.read_discrete_inputs(address=0, count=8, slave=unit_id)
+        di_resp = await call_modbus(client.read_discrete_inputs, address=0, count=8, unit_id=unit_id)
         rtt_di = (time.perf_counter() - t_req) * 1000.0
         if di_resp.isError():
-            print(f"  [!] Modbus Exception on FC 02: {di_resp}")
+            print(f"  [!] Modbus Exception on FC 02: {di_resp}. Trying FC 01 (Read Coils)...")
+            coils_resp = await call_modbus(client.read_coils, address=0, count=8, unit_id=unit_id)
+            if not coils_resp.isError():
+                print(f"  [+] FC 01 (Coils) succeeded! Bits: {coils_resp.bits[:8]}")
+            else:
+                print(f"  [!] FC 01 also failed: {coils_resp}")
         else:
             print(f"  [+] FC 02 Response received in {rtt_di:.2f} ms:")
             names = [
@@ -68,10 +74,15 @@ async def test_modbus_connection(host: str, port: int, unit_id: int, start_reg: 
     print(f"\n[*] Reading Holding Registers (FC 03) from address {start_reg} to {start_reg + count - 1}...")
     t_req = time.perf_counter()
     try:
-        hr_resp = await client.read_holding_registers(address=start_reg, count=count, slave=unit_id)
+        hr_resp = await call_modbus(client.read_holding_registers, address=start_reg, count=count, unit_id=unit_id)
         rtt_hr = (time.perf_counter() - t_req) * 1000.0
         if hr_resp.isError():
-            print(f"  [!] Modbus Exception on FC 03: {hr_resp}")
+            print(f"  [!] Modbus Exception on FC 03: {hr_resp}. Trying FC 04 (Input Registers)...")
+            ir_resp = await call_modbus(client.read_input_registers, address=start_reg, count=count, unit_id=unit_id)
+            if not ir_resp.isError():
+                print(f"  [+] FC 04 (Input Registers) succeeded! Regs: {ir_resp.registers[:count]}")
+            else:
+                print(f"  [!] FC 04 also failed: {ir_resp}")
         else:
             print(f"  [+] FC 03 Response received in {rtt_hr:.2f} ms:")
             regs = hr_resp.registers

@@ -90,7 +90,7 @@ if [ ! -d "venv" ]; then
         echo -e "${RED}${BOLD}[ERROR] Failed to create virtual environment!${NC}"
         echo -e "${YELLOW}Raspberry Pi OS requires 'python3-venv'. Please run this command:${NC}"
         echo ""
-        echo -e "    ${BOLD}sudo apt update && sudo apt install -y python3-venv python3-pip libatlas-base-dev${NC}"
+        echo -e "    ${BOLD}sudo apt update && sudo apt install -y python3-venv python3-pip libopenblas-dev${NC}"
         echo ""
         read -r -p "Press Enter to close..." dummy || true
         exit 1
@@ -113,7 +113,7 @@ if [ "$NEED_INSTALL" = true ]; then
         echo ""
         echo -e "${RED}${BOLD}[ERROR] Failed to install Python dependencies!${NC}"
         echo -e "${YELLOW}If installation failed due to C-compilation, run:${NC}"
-        echo -e "    ${BOLD}sudo apt install -y build-essential libatlas-base-dev libopenblas-dev${NC}"
+        echo -e "    ${BOLD}sudo apt install -y build-essential libopenblas-dev${NC}"
         echo ""
         read -r -p "Press Enter to close..." dummy || true
         exit 1

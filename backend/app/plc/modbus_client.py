@@ -4,6 +4,7 @@ Grouped Block Reads, and Precise Latency Timestamping.
 """
 import asyncio
 from datetime import datetime, timezone
+import inspect
 import logging
 import time
 from typing import Dict, Any, List, Optional, Tuple, Callable
@@ -18,6 +19,28 @@ from app.plc.register_map import RegisterMapConfig, group_contiguous_registers
 from app.simulation.mock_plc import global_mock_plc
 
 logger = logging.getLogger("plc.modbus_client")
+
+
+def call_modbus(method, *args, unit_id: int = 1, **kwargs):
+    """
+    Invoke a PyModbus client method with version-agnostic unit/slave parameter.
+    PyModbus <3.0 used `unit`.
+    PyModbus 3.0-3.7 used `slave`.
+    PyModbus 3.8+ uses `device_id`.
+    """
+    try:
+        params = inspect.signature(method).parameters
+        if "device_id" in params:
+            kwargs["device_id"] = unit_id
+        elif "slave" in params:
+            kwargs["slave"] = unit_id
+        elif "unit" in params:
+            kwargs["unit"] = unit_id
+        else:
+            kwargs["device_id"] = unit_id
+    except Exception:
+        kwargs["device_id"] = unit_id
+    return method(*args, **kwargs)
 
 
 class SelecModbusClient:
@@ -115,14 +138,15 @@ class SelecModbusClient:
                     }
                 self._on_measurement_callback(disconnected_meas)
 
-        connected = await self.connect()
+        self._last_reconnect_time = 0.0
+        connected = await self.connect(force=True)
         return connected
 
     def set_measurement_callback(self, callback: Callable[[Dict[str, Any]], None]):
         """Register callback invoked whenever new measurements are ingested."""
         self._on_measurement_callback = callback
 
-    async def connect(self) -> bool:
+    async def connect(self, force: bool = False) -> bool:
         """Establish or verify Modbus TCP connection."""
         if self.simulation_mode:
             # Check if standalone Modbus server is running on localhost; otherwise use in-process engine
@@ -143,20 +167,20 @@ class SelecModbusClient:
             logger.info("Using high-fidelity in-process Selec PLC simulation engine.")
             return True
 
-        # Physical hardware connection - Throttle reconnection attempts to at most once every 3.0s
+        # Physical hardware connection - Throttle reconnection attempts to at most once every 3.0s unless forced
         now = time.monotonic()
-        if now - self._last_reconnect_time < 3.0:
+        if not force and now - self._last_reconnect_time < 3.0:
             return self.diagnostics.connected
 
         if self._reconnect_lock is None:
             self._reconnect_lock = asyncio.Lock()
 
-        if self._reconnect_lock.locked():
+        if self._reconnect_lock.locked() and not force:
             return self.diagnostics.connected
 
         async with self._reconnect_lock:
             now = time.monotonic()
-            if now - self._last_reconnect_time < 3.0:
+            if not force and now - self._last_reconnect_time < 3.0:
                 return self.diagnostics.connected
             self._last_reconnect_time = now
 
@@ -239,7 +263,7 @@ class SelecModbusClient:
         t_request_mono = time.perf_counter()
         t_request_utc = datetime.now(timezone.utc).isoformat()
         measurements: Dict[str, Any] = {}
-        all_ok = True
+        successful_reads = 0
 
         # 1. Read Discrete Inputs (for fast_group)
         if group_name == "fast_group":
@@ -253,6 +277,7 @@ class SelecModbusClient:
                     t_response_mono = time.perf_counter()
                     t_response_utc = datetime.now(timezone.utc).isoformat()
                     rtt_ms = (t_response_mono - t_request_mono) * 1000.0
+                    successful_reads += 1
 
                     for sig in discrete_sigs:
                         idx = sig.address - min_addr
@@ -272,7 +297,21 @@ class SelecModbusClient:
                         }
                 except Exception as e:
                     logger.debug(f"Discrete input read failed for {group_name}: {e}")
-                    all_ok = False
+                    # If discrete inputs fail (e.g. FC 02 unsupported by PLC), record placeholder but do not kill connection
+                    for sig in discrete_sigs:
+                        measurements[sig.name] = {
+                            "name": sig.name,
+                            "raw_value": 0,
+                            "value": 0,
+                            "unit": "",
+                            "quality": "DISCONNECTED" if not self.simulation_mode else "SIMULATED",
+                            "group": group_name,
+                            "t_request": t_request_utc,
+                            "t_response": None,
+                            "t_request_mono": t_request_mono,
+                            "t_response_mono": t_request_mono,
+                            "rtt_ms": 0.0,
+                        }
 
         # 2. Read Numerical Holding Registers in contiguous blocks
         blocks = self.group_blocks.get(group_name, [])
@@ -287,6 +326,7 @@ class SelecModbusClient:
                 t_resp_mono = time.perf_counter()
                 t_resp_utc = datetime.now(timezone.utc).isoformat()
                 rtt_ms = (t_resp_mono - t_req_mono) * 1000.0
+                successful_reads += 1
 
                 for sig in block["signals"]:
                     rel_idx = sig.address - start_addr
@@ -316,13 +356,27 @@ class SelecModbusClient:
                     }
             except Exception as e:
                 logger.debug(f"Holding register read failed for block starting {start_addr}: {e}")
-                all_ok = False
+                for sig in block["signals"]:
+                    measurements[sig.name] = {
+                        "name": sig.name,
+                        "raw_value": 0,
+                        "value": 0.0,
+                        "unit": sig.engineering_unit,
+                        "quality": "DISCONNECTED" if not self.simulation_mode else "SIMULATED",
+                        "group": group_name,
+                        "t_request": t_req_utc,
+                        "t_response": None,
+                        "t_request_mono": t_req_mono,
+                        "t_response_mono": t_req_mono,
+                        "rtt_ms": 0.0,
+                    }
 
         # Record diagnostics
         t_finish_mono = time.perf_counter()
         total_rtt_ms = (t_finish_mono - t_request_mono) * 1000.0
 
-        if all_ok and measurements:
+        # Connection is healthy if at least one block read succeeded or TCP client is connected
+        if successful_reads > 0:
             self.diagnostics.connected = True
             self.diagnostics.last_global_success_monotonic = t_finish_mono
             grp_diag = self.diagnostics.groups.get(group_name)
@@ -342,46 +396,21 @@ class SelecModbusClient:
 
             # When physical PLC is disconnected, report true DISCONNECTED state (no fake/stale values)
             if not self.simulation_mode and self._on_measurement_callback:
-                disconnected_meas: Dict[str, Any] = {}
-                if group_name == "fast_group":
-                    for sig in self.config.discrete_signals:
-                        if sig.group == group_name:
-                            disconnected_meas[sig.name] = {
-                                "name": sig.name,
-                                "raw_value": 0,
-                                "value": 0,
-                                "unit": "",
-                                "quality": "DISCONNECTED",
-                                "group": group_name,
-                                "t_request": t_request_utc,
-                                "t_response": None,
-                                "t_request_mono": t_request_mono,
-                                "t_response_mono": t_finish_mono,
-                                "rtt_ms": 0.0,
-                            }
-                for block in self.group_blocks.get(group_name, []):
-                    for sig in block["signals"]:
-                        disconnected_meas[sig.name] = {
-                            "name": sig.name,
-                            "raw_value": 0,
-                            "value": 0.0,
-                            "unit": sig.engineering_unit,
-                            "quality": "DISCONNECTED",
-                            "group": group_name,
-                            "t_request": t_request_utc,
-                            "t_response": None,
-                            "t_request_mono": t_request_mono,
-                            "t_response_mono": t_finish_mono,
-                            "rtt_ms": 0.0,
-                        }
-                self._on_measurement_callback(disconnected_meas)
+                self._on_measurement_callback(measurements)
             return False
 
     async def _read_discrete_inputs(self, address: int, count: int) -> List[bool]:
-        """Low-level read discrete inputs FC 02."""
+        """Low-level read discrete inputs FC 02 with fallback to Read Coils FC 01."""
         if self.client and self.client.connected:
-            resp = await self.client.read_discrete_inputs(address=address, count=count, slave=self.unit_id)
+            resp = await call_modbus(self.client.read_discrete_inputs, address=address, count=count, unit_id=self.unit_id)
             if resp.isError():
+                # Attempt fallback to Read Coils (FC 01) - common on Selec PLCs
+                try:
+                    resp_coils = await call_modbus(self.client.read_coils, address=address, count=count, unit_id=self.unit_id)
+                    if not resp_coils.isError() and hasattr(resp_coils, "bits"):
+                        return resp_coils.bits[:count]
+                except Exception:
+                    pass
                 raise ModbusException(f"Modbus error reading discrete inputs: {resp}")
             return resp.bits[:count]
 
@@ -392,10 +421,17 @@ class SelecModbusClient:
         raise ModbusException(f"PLC not connected at {self.host}:{self.port}")
 
     async def _read_holding_registers(self, address: int, count: int) -> List[int]:
-        """Low-level read holding registers FC 03."""
+        """Low-level read holding registers FC 03 with fallback to Read Input Registers FC 04."""
         if self.client and self.client.connected:
-            resp = await self.client.read_holding_registers(address=address, count=count, slave=self.unit_id)
+            resp = await call_modbus(self.client.read_holding_registers, address=address, count=count, unit_id=self.unit_id)
             if resp.isError():
+                # Attempt fallback to Read Input Registers (FC 04) if FC 03 returns error
+                try:
+                    resp_ir = await call_modbus(self.client.read_input_registers, address=address, count=count, unit_id=self.unit_id)
+                    if not resp_ir.isError() and hasattr(resp_ir, "registers"):
+                        return resp_ir.registers[:count]
+                except Exception:
+                    pass
                 raise ModbusException(f"Modbus error reading holding registers: {resp}")
             return resp.registers[:count]
 
@@ -463,7 +499,7 @@ class SelecModbusClient:
 
         try:
             if self.client and self.client.connected:
-                resp = await self.client.write_coil(address=address, value=value, slave=self.unit_id)
+                resp = await call_modbus(self.client.write_coil, address=address, value=value, unit_id=self.unit_id)
                 if resp.isError():
                     return False, f"Modbus write coil error: {resp}"
             else:
@@ -489,7 +525,7 @@ class SelecModbusClient:
         try:
             if self.client and self.client.connected:
                 encoded = encode_16bit_uint(value)
-                resp = await self.client.write_register(address=address, value=encoded, slave=self.unit_id)
+                resp = await call_modbus(self.client.write_register, address=address, value=encoded, unit_id=self.unit_id)
                 if resp.isError():
                     return False, f"Modbus write register error: {resp}"
             else:
