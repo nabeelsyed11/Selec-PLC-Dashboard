@@ -114,8 +114,8 @@ async def test_modbus_connection(host: str, port: int, unit_id: int, start_reg: 
 
 def main():
     parser = argparse.ArgumentParser(description="Selec MiBRX-6M Modbus TCP Safe Read Tester")
-    parser.add_argument("--host", default="127.0.0.1", help="PLC IP address (default: 127.0.0.1)")
-    parser.add_argument("--port", type=int, default=5020, help="Modbus TCP port (default: 5020)")
+    parser.add_argument("--host", default="192.168.1.50", help="PLC IP address (default: 192.168.1.50)")
+    parser.add_argument("--port", type=int, default=502, help="Modbus TCP port (default: 502)")
     parser.add_argument("--unit", type=int, default=1, help="Modbus Slave ID (default: 1)")
     parser.add_argument("--start", type=int, default=0, help="Starting holding register (default: 0)")
     parser.add_argument("--count", type=int, default=25, help="Number of registers to read (default: 25)")

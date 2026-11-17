@@ -7,8 +7,8 @@
 # ==============================================================================
 
 plc_connection:
-  default_host: "127.0.0.1"      # Change to physical PLC IP (e.g. 192.168.1.50)
-  default_port: 5020             # Modbus TCP port (502 for hardware, 5020 for simulation)
+  default_host: "192.168.1.50"   # Physical PLC IP
+  default_port: 502              # Modbus TCP port (502 for hardware, 5020 for simulation)
   unit_id: 1                     # Modbus Unit ID / Slave ID
   timeout_seconds: 1.5           # Socket response timeout
   max_retries: 3                 # Retries before marking connection degraded

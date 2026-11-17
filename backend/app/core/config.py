@@ -26,11 +26,11 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Selec MiBRX-6M Industrial IoT Gateway"
 
     # PLC Connection Settings
-    PLC_HOST: str = "127.0.0.1"
-    PLC_PORT: int = 5020
+    PLC_HOST: str = "192.168.1.50"
+    PLC_PORT: int = 502
     PLC_UNIT_ID: int = 1
     PLC_TIMEOUT_SECONDS: float = 1.5
-    SIMULATION_MODE: bool = True
+    SIMULATION_MODE: bool = False
 
     # Register Map Configuration
     REGISTER_MAP_PATH: str = str(BASE_DIR / "config" / "register_map.yaml")
