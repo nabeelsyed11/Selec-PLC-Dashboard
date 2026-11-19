@@ -76,7 +76,14 @@ class SelecModbusClient:
         self._running = False
         self._on_measurement_callback: Optional[Callable[[Dict[str, Any]], None]] = None
         self._reconnect_lock: Optional[asyncio.Lock] = None
+        self._io_lock: Optional[asyncio.Lock] = None
         self._last_reconnect_time = 0.0
+
+    @property
+    def io_lock(self) -> asyncio.Lock:
+        if self._io_lock is None:
+            self._io_lock = asyncio.Lock()
+        return self._io_lock
 
     async def reconfigure(
         self,
@@ -195,8 +202,8 @@ class SelecModbusClient:
                         self.client.close()
                     except Exception:
                         pass
-                self.client = AsyncModbusTcpClient(self.host, port=self.port, timeout=self.timeout)
-                connected = await asyncio.wait_for(self.client.connect(), timeout=min(1.0, self.timeout))
+                self.client = AsyncModbusTcpClient(self.host, port=self.port, timeout=max(2.5, self.timeout))
+                connected = await asyncio.wait_for(self.client.connect(), timeout=max(2.5, self.timeout))
                 self.diagnostics.connected = bool(connected)
                 if connected:
                     logger.info(f"Connected to physical Selec MiBRX-6M PLC at {self.host}:{self.port}")
@@ -402,7 +409,9 @@ class SelecModbusClient:
             return True
         else:
             if not self.simulation_mode:
-                self.diagnostics.connected = False
+                is_stale = self.diagnostics.is_data_stale(self.diagnostics.last_global_success_monotonic)
+                if is_stale or not (self.client and getattr(self.client, "connected", False)):
+                    self.diagnostics.connected = False
             grp_diag = self.diagnostics.groups.get(group_name)
             if grp_diag:
                 grp_diag.record_failure("Read error or timeout", t_finish_mono)
@@ -443,24 +452,32 @@ class SelecModbusClient:
     async def _read_coils(self, address: int, count: int) -> List[bool]:
         """Low-level read coils FC 01 with fallback to Read Discrete Inputs FC 02."""
         if self.client and self.client.connected:
-            resp = await call_modbus(self.client.read_coils, address=address, count=count, unit_id=self.unit_id)
-            if resp.isError() or not hasattr(resp, "bits"):
-                # Attempt address - 1 (1-based to 0-based offset tolerance)
-                try:
-                    resp_adj = await call_modbus(self.client.read_coils, address=max(0, address - 1), count=count, unit_id=self.unit_id)
-                    if not resp_adj.isError() and hasattr(resp_adj, "bits"):
-                        return resp_adj.bits[:count]
-                except Exception:
-                    pass
-                # Attempt fallback to Discrete Inputs FC 02
-                try:
-                    resp_di = await call_modbus(self.client.read_discrete_inputs, address=address, count=count, unit_id=self.unit_id)
-                    if not resp_di.isError() and hasattr(resp_di, "bits"):
-                        return resp_di.bits[:count]
-                except Exception:
-                    pass
-                raise ModbusException(f"Modbus error reading coils at {address}: {resp}")
-            return resp.bits[:count]
+            async with self.io_lock:
+                resp = await call_modbus(self.client.read_coils, address=address, count=count, unit_id=self.unit_id)
+                if resp.isError() or not hasattr(resp, "bits"):
+                    # Attempt address - 1 (1-based to 0-based offset tolerance)
+                    try:
+                        resp_adj = await call_modbus(self.client.read_coils, address=max(0, address - 1), count=count, unit_id=self.unit_id)
+                        if not resp_adj.isError() and hasattr(resp_adj, "bits"):
+                            return resp_adj.bits[:count]
+                    except Exception:
+                        pass
+                    # Attempt address + 1
+                    try:
+                        resp_adj2 = await call_modbus(self.client.read_coils, address=address + 1, count=count, unit_id=self.unit_id)
+                        if not resp_adj2.isError() and hasattr(resp_adj2, "bits"):
+                            return resp_adj2.bits[:count]
+                    except Exception:
+                        pass
+                    # Attempt fallback to Discrete Inputs FC 02
+                    try:
+                        resp_di = await call_modbus(self.client.read_discrete_inputs, address=address, count=count, unit_id=self.unit_id)
+                        if not resp_di.isError() and hasattr(resp_di, "bits"):
+                            return resp_di.bits[:count]
+                    except Exception:
+                        pass
+                    raise ModbusException(f"Modbus error reading coils at {address}: {resp}")
+                return resp.bits[:count]
 
         if self.simulation_mode:
             return [global_mock_plc.read_coils(address + i) for i in range(count)]
@@ -470,17 +487,18 @@ class SelecModbusClient:
     async def _read_discrete_inputs(self, address: int, count: int) -> List[bool]:
         """Low-level read discrete inputs FC 02 with fallback to Read Coils FC 01."""
         if self.client and self.client.connected:
-            resp = await call_modbus(self.client.read_discrete_inputs, address=address, count=count, unit_id=self.unit_id)
-            if resp.isError():
-                # Attempt fallback to Read Coils (FC 01) - common on Selec PLCs
-                try:
-                    resp_coils = await call_modbus(self.client.read_coils, address=address, count=count, unit_id=self.unit_id)
-                    if not resp_coils.isError() and hasattr(resp_coils, "bits"):
-                        return resp_coils.bits[:count]
-                except Exception:
-                    pass
-                raise ModbusException(f"Modbus error reading discrete inputs: {resp}")
-            return resp.bits[:count]
+            async with self.io_lock:
+                resp = await call_modbus(self.client.read_discrete_inputs, address=address, count=count, unit_id=self.unit_id)
+                if resp.isError():
+                    # Attempt fallback to Read Coils (FC 01) - common on Selec PLCs
+                    try:
+                        resp_coils = await call_modbus(self.client.read_coils, address=address, count=count, unit_id=self.unit_id)
+                        if not resp_coils.isError() and hasattr(resp_coils, "bits"):
+                            return resp_coils.bits[:count]
+                    except Exception:
+                        pass
+                    raise ModbusException(f"Modbus error reading discrete inputs: {resp}")
+                return resp.bits[:count]
 
         # ONLY simulate if explicitly in simulation mode!
         if self.simulation_mode:
@@ -491,28 +509,37 @@ class SelecModbusClient:
     async def _read_registers(self, address: int, count: int, function_code: int = 3) -> List[int]:
         """Low-level register reader supporting FC 03 (Holding) and FC 04 (Input) with mutual fallback."""
         if self.client and self.client.connected:
-            primary_fn = self.client.read_input_registers if function_code == 4 else self.client.read_holding_registers
-            secondary_fn = self.client.read_holding_registers if function_code == 4 else self.client.read_input_registers
+            async with self.io_lock:
+                primary_fn = self.client.read_input_registers if function_code == 4 else self.client.read_holding_registers
+                secondary_fn = self.client.read_holding_registers if function_code == 4 else self.client.read_input_registers
 
-            resp = await call_modbus(primary_fn, address=address, count=count, unit_id=self.unit_id)
-            if resp.isError() or not hasattr(resp, "registers"):
-                # Fallback 1: try secondary function code at same address
-                try:
-                    resp_sec = await call_modbus(secondary_fn, address=address, count=count, unit_id=self.unit_id)
-                    if not resp_sec.isError() and hasattr(resp_sec, "registers"):
-                        return resp_sec.registers[:count]
-                except Exception:
-                    pass
-                # Fallback 2: try 1-based offset tolerance (address - 1)
-                for fn in (primary_fn, secondary_fn):
+                resp = await call_modbus(primary_fn, address=address, count=count, unit_id=self.unit_id)
+                if resp.isError() or not hasattr(resp, "registers"):
+                    # Fallback 1: try secondary function code at same address
                     try:
-                        resp_adj = await call_modbus(fn, address=max(0, address - 1), count=count, unit_id=self.unit_id)
-                        if not resp_adj.isError() and hasattr(resp_adj, "registers"):
-                            return resp_adj.registers[:count]
+                        resp_sec = await call_modbus(secondary_fn, address=address, count=count, unit_id=self.unit_id)
+                        if not resp_sec.isError() and hasattr(resp_sec, "registers"):
+                            return resp_sec.registers[:count]
                     except Exception:
                         pass
-                raise ModbusException(f"Modbus error reading registers at {address}: {resp}")
-            return resp.registers[:count]
+                    # Fallback 2: try 1-based offset tolerance (address - 1)
+                    for fn in (primary_fn, secondary_fn):
+                        try:
+                            resp_adj = await call_modbus(fn, address=max(0, address - 1), count=count, unit_id=self.unit_id)
+                            if not resp_adj.isError() and hasattr(resp_adj, "registers"):
+                                return resp_adj.registers[:count]
+                        except Exception:
+                            pass
+                    # Fallback 3: try 0-based offset tolerance (address + 1)
+                    for fn in (primary_fn, secondary_fn):
+                        try:
+                            resp_adj2 = await call_modbus(fn, address=address + 1, count=count, unit_id=self.unit_id)
+                            if not resp_adj2.isError() and hasattr(resp_adj2, "registers"):
+                                return resp_adj2.registers[:count]
+                        except Exception:
+                            pass
+                    raise ModbusException(f"Modbus error reading registers at {address}: {resp}")
+                return resp.registers[:count]
 
         if self.simulation_mode:
             return self._simulate_holding_registers(address, count)

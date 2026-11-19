@@ -21,14 +21,17 @@ plc_connection:
 # ------------------------------------------------------------------------------
 polling_groups:
   fast_group:
-    interval_ms: 200             # 5 Hz for dynamic motion & counters
+    interval_ms: 200             # 5 Hz for SCADA cycle bits and IW0/QW0
     enabled: true
   medium_group:
-    interval_ms: 500             # 2 Hz for thermal & power monitoring
+    interval_ms: 500             # 2 Hz for electrical voltage, current, PF
     enabled: true
   slow_group:
-    interval_ms: 2000            # 0.5 Hz for cumulative counters & diagnostics
-    enabled: true
+    interval_ms: 2000            # Optional cumulative counters
+    enabled: false
+  sim_signals:
+    interval_ms: 1000            # Unmapped mock signals (disabled on physical hardware)
+    enabled: false
 
 # ------------------------------------------------------------------------------
 # Writable Allowlist: SAFETY CRITICAL
@@ -74,7 +77,7 @@ discrete_signals:
     description: "Inductive proximity switch monitoring driven roller"
     type: "discrete_input"
     address: 0                  # FC 02 (Address 10001 in 1-based)
-    group: "fast_group"
+    group: "sim_signals"
     normal_state: 0             # 0=Normal, 1=Slip Detected
     debounce_ms: 50
 
@@ -82,49 +85,49 @@ discrete_signals:
     description: "Magnetic reed switch: pusher fully extended"
     type: "discrete_input"
     address: 1
-    group: "fast_group"
+    group: "sim_signals"
     normal_state: 0
 
   - name: "pusher_retracted_feedback"
     description: "Magnetic reed switch: pusher fully retracted"
     type: "discrete_input"
     address: 2
-    group: "fast_group"
+    group: "sim_signals"
     normal_state: 1
 
   - name: "vfd_running_status"
     description: "VFD run feedback relay"
     type: "discrete_input"
     address: 3
-    group: "fast_group"
+    group: "sim_signals"
     normal_state: 0
 
   - name: "vfd_fault_status"
     description: "VFD fault trip contact (1=Fault)"
     type: "discrete_input"
     address: 4
-    group: "fast_group"
+    group: "sim_signals"
     normal_state: 0
 
   - name: "emergency_stop_ok"
     description: "Hardware E-Stop circuit status (1=Healthy, 0=Tripped)"
     type: "discrete_input"
     address: 5
-    group: "fast_group"
+    group: "sim_signals"
     normal_state: 1
 
   - name: "safety_guard_closed"
     description: "Interlock guard door limit switch (1=Closed, 0=Open)"
     type: "discrete_input"
     address: 6
-    group: "fast_group"
+    group: "sim_signals"
     normal_state: 1
 
   - name: "optical_part_sensor"
     description: "Photoelectric beam sensor detecting passing item"
     type: "discrete_input"
     address: 7
-    group: "fast_group"
+    group: "sim_signals"
     normal_state: 0
 
   # SCADA Cycle Sequencer Coils (MX2 - MX5)
@@ -236,7 +239,7 @@ numerical_signals:
     scaling_factor: 0.1         # 10 counts = 1.0 kg (0-4000 counts -> 0.0 - 400.0 kg)
     offset: 0.0
     engineering_unit: "kg"
-    group: "fast_group"
+    group: "sim_signals"
     alarm_warning_high: 350.0
     alarm_critical_high: 420.0
 
@@ -250,7 +253,7 @@ numerical_signals:
     scaling_factor: 0.1         # 253 counts = 25.3 °C
     offset: 0.0
     engineering_unit: "°C"
-    group: "medium_group"
+    group: "sim_signals"
     alarm_warning_high: 75.0
     alarm_critical_high: 90.0
 
@@ -266,7 +269,7 @@ numerical_signals:
     scaling_factor: 1.0
     offset: 0.0
     engineering_unit: "pulses"
-    group: "fast_group"
+    group: "sim_signals"
 
   # 4. Conveyor Speed (Derived from Encoder pulses by PLC or Gateway)
   - name: "conveyor_belt_speed"
@@ -278,7 +281,7 @@ numerical_signals:
     scaling_factor: 0.01        # 125 counts = 1.25 m/s
     offset: 0.0
     engineering_unit: "m/s"
-    group: "fast_group"
+    group: "sim_signals"
 
   # 5. Production Counter (32-bit UINT across 2 registers: 40006 & 40007)
   - name: "production_count_total"
@@ -292,7 +295,7 @@ numerical_signals:
     scaling_factor: 1.0
     offset: 0.0
     engineering_unit: "units"
-    group: "fast_group"
+    group: "sim_signals"
 
   # 6. Production Rate
   - name: "production_rate_ppm"
@@ -304,7 +307,7 @@ numerical_signals:
     scaling_factor: 0.1         # 120 counts = 12.0 ppm
     offset: 0.0
     engineering_unit: "parts/min"
-    group: "medium_group"
+    group: "sim_signals"
 
   # 7. Energy Meter Parameters (Via RS-485 Gateway into MiBRX registers)
   - name: "mains_voltage_v"
@@ -318,7 +321,7 @@ numerical_signals:
     scaling_factor: 1.0
     offset: 0.0
     engineering_unit: "V"
-    group: "medium_group"
+    group: "sim_signals"
 
   - name: "mains_current_a"
     description: "AC Line RMS Current"
@@ -331,7 +334,7 @@ numerical_signals:
     scaling_factor: 1.0
     offset: 0.0
     engineering_unit: "A"
-    group: "medium_group"
+    group: "sim_signals"
 
   - name: "active_power_kw"
     description: "Total 3-Phase Active Power"
@@ -344,7 +347,7 @@ numerical_signals:
     scaling_factor: 1.0
     offset: 0.0
     engineering_unit: "kW"
-    group: "medium_group"
+    group: "sim_signals"
 
   - name: "power_factor"
     description: "Overall Power Factor"
@@ -357,7 +360,7 @@ numerical_signals:
     scaling_factor: 1.0
     offset: 0.0
     engineering_unit: ""
-    group: "medium_group"
+    group: "sim_signals"
 
   - name: "grid_frequency_hz"
     description: "AC Grid Frequency"
@@ -368,7 +371,7 @@ numerical_signals:
     scaling_factor: 0.01        # 5002 counts = 50.02 Hz
     offset: 0.0
     engineering_unit: "Hz"
-    group: "slow_group"
+    group: "sim_signals"
 
   - name: "cumulative_energy_kwh"
     description: "Total Accumulated Active Energy"
@@ -381,7 +384,7 @@ numerical_signals:
     scaling_factor: 1.0
     offset: 0.0
     engineering_unit: "kWh"
-    group: "slow_group"
+    group: "sim_signals"
 
   # 8. VFD Feedback Registers
   - name: "vfd_output_frequency"
@@ -393,7 +396,7 @@ numerical_signals:
     scaling_factor: 0.1         # 452 = 45.2 Hz
     offset: 0.0
     engineering_unit: "Hz"
-    group: "fast_group"
+    group: "sim_signals"
 
   - name: "vfd_motor_current"
     description: "VFD output current"
@@ -404,7 +407,7 @@ numerical_signals:
     scaling_factor: 0.1         # 124 = 12.4 A
     offset: 0.0
     engineering_unit: "A"
-    group: "medium_group"
+    group: "sim_signals"
 
   # 9. PLC Sequence Clock / Cycle Timestamp (Optional PLC Hardware support)
   - name: "plc_cycle_sequence"
@@ -416,4 +419,4 @@ numerical_signals:
     scaling_factor: 1.0
     offset: 0.0
     engineering_unit: "scans"
-    group: "fast_group"
+    group: "sim_signals"
