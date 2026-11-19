@@ -46,13 +46,18 @@ def call_modbus(method, *args, unit_id: int = 1, **kwargs):
     return method(*args, **kwargs)
 
 def decode_float32(r1: int, r2: int, word_swap: bool = False) -> float:
-    """Decode IEEE-754 32-bit float from 2 consecutive 16-bit registers."""
+    """Decode IEEE-754 32-bit float from 2 consecutive 16-bit registers (with auto endian check)."""
     try:
         if word_swap:
             r1, r2 = r2, r1
         packed = struct.pack(">HH", r1 & 0xFFFF, r2 & 0xFFFF)
         val = struct.unpack(">f", packed)[0]
-        if val != val or abs(val) > 1e7:
+        # Auto-detect word swap if out of expected industrial range
+        if val != val or abs(val) > 1e6 or (abs(val) < 1e-4 and abs(val) > 0):
+            packed_swap = struct.pack(">HH", r2 & 0xFFFF, r1 & 0xFFFF)
+            val_swap = struct.unpack(">f", packed_swap)[0]
+            if not (val_swap != val_swap) and abs(val_swap) <= 1e6:
+                return float(val_swap)
             return 0.0
         return float(val)
     except Exception:
@@ -74,6 +79,7 @@ state = {
     "plc_host": PLC_HOST,
     "plc_port": PLC_PORT,
     "unit_id": PLC_UNIT_ID,
+    "address_detected": "Scanning registers...",
     "rtt_ms": 0.0,
     "last_update": None,
     # SCADA Cycles (MX2..MX5)
@@ -93,9 +99,30 @@ state = {
 
 active_websockets = set()
 
+async def client_read_hr(client, address, unit_id, count=1):
+    return await call_modbus(client.read_holding_registers, address=address, count=count, unit_id=unit_id)
+
+async def client_read_ir(client, address, unit_id, count=1):
+    return await call_modbus(client.read_input_registers, address=address, count=count, unit_id=unit_id)
+
 async def modbus_polling_task():
-    """Background task to poll all SCADA registers continuously."""
+    """Background task to discover and poll all Selec PLC registers continuously."""
     client = None
+
+    # Candidate list for IW0 (Address 40768) - exact list that worked previously
+    candidate_list = [
+        (client_read_hr, 767, "Holding Reg 767 (Modbus 40768 1-based)", -1),
+        (client_read_hr, 768, "Holding Reg 768 (Modbus 40768 0-based)", 0),
+        (client_read_ir, 767, "Input Reg 767 (Modbus 30768 1-based)", -1),
+        (client_read_ir, 768, "Input Reg 768 (Modbus 30768 0-based)", 0),
+        (client_read_hr, 40768, "Holding Reg 40768 (Literal)", 40000),
+        (client_read_hr, 40767, "Holding Reg 40767 (Literal 0-based)", 40000),
+        (client_read_ir, 40768, "Input Reg 40768 (Literal)", 30000),
+    ]
+
+    active_read_fn = None
+    active_address = None
+    active_offset = 0
 
     while True:
         try:
@@ -111,100 +138,47 @@ async def modbus_polling_task():
                 logger.info(f"✓ CONNECTED to Selec PLC at {PLC_HOST}:{PLC_PORT} successfully!")
 
             t0 = time.perf_counter()
-            reads_succeeded = 0
 
             # ------------------------------------------------------------------
-            # 1. Read Cycles MX2..MX5 (Coils 514..517, FC 01)
+            # 1. Primary Heartbeat: Read IW0 (PLC Input Address IW0)
             # ------------------------------------------------------------------
-            try:
-                coils = await call_modbus(client.read_coils, address=514, count=4, unit_id=PLC_UNIT_ID)
-                if not coils.isError() and hasattr(coils, "bits") and len(coils.bits) >= 4:
-                    state["cycle_1"] = bool(coils.bits[0])
-                    state["cycle_2"] = bool(coils.bits[1])
-                    state["cycle_3"] = bool(coils.bits[2])
-                    state["cycle_4"] = bool(coils.bits[3])
-                    reads_succeeded += 1
-                else:
-                    # 1-based offset fallback (address 513)
-                    coils_adj = await call_modbus(client.read_coils, address=513, count=4, unit_id=PLC_UNIT_ID)
-                    if not coils_adj.isError() and hasattr(coils_adj, "bits") and len(coils_adj.bits) >= 4:
-                        state["cycle_1"] = bool(coils_adj.bits[0])
-                        state["cycle_2"] = bool(coils_adj.bits[1])
-                        state["cycle_3"] = bool(coils_adj.bits[2])
-                        state["cycle_4"] = bool(coils_adj.bits[3])
-                        reads_succeeded += 1
-            except Exception as e:
-                logger.debug(f"Coils read error: {e}")
+            val_found = None
+            if active_read_fn is not None and active_address is not None:
+                try:
+                    resp = await active_read_fn(client, active_address, PLC_UNIT_ID)
+                    if not resp.isError() and hasattr(resp, "registers") and resp.registers:
+                        val_found = resp.registers[0]
+                except Exception:
+                    active_read_fn = None
+                    active_address = None
 
-            # ------------------------------------------------------------------
-            # 2. Read IW0 (PLC Input Address IW0, Modbus 40768, Int16)
-            # ------------------------------------------------------------------
-            try:
-                # Try Holding Register 767 (FC 03)
-                iw0_r = await call_modbus(client.read_holding_registers, address=767, count=1, unit_id=PLC_UNIT_ID)
-                if not iw0_r.isError() and hasattr(iw0_r, "registers") and iw0_r.registers:
-                    raw = iw0_r.registers[0]
-                    state["iw0_value"] = raw if raw < 32768 else raw - 65536
-                    reads_succeeded += 1
-                else:
-                    # Fallback to Input Register 767 (FC 04)
-                    iw0_ir = await call_modbus(client.read_input_registers, address=767, count=1, unit_id=PLC_UNIT_ID)
-                    if not iw0_ir.isError() and hasattr(iw0_ir, "registers") and iw0_ir.registers:
-                        raw = iw0_ir.registers[0]
-                        state["iw0_value"] = raw if raw < 32768 else raw - 65536
-                        reads_succeeded += 1
-            except Exception as e:
-                logger.debug(f"IW0 read error: {e}")
-
-            # ------------------------------------------------------------------
-            # 3. Read Scaled Out / VFD Out QW0 (Modbus 30768, float32, in Hz)
-            # ------------------------------------------------------------------
-            try:
-                qw0_r = await call_modbus(client.read_input_registers, address=767, count=2, unit_id=PLC_UNIT_ID)
-                if not qw0_r.isError() and hasattr(qw0_r, "registers") and len(qw0_r.registers) >= 2:
-                    val = decode_float32(qw0_r.registers[0], qw0_r.registers[1])
-                    state["vfd_out_hz"] = round(val, 1)
-                    reads_succeeded += 1
-                else:
-                    qw0_hr = await call_modbus(client.read_holding_registers, address=767, count=2, unit_id=PLC_UNIT_ID)
-                    if not qw0_hr.isError() and hasattr(qw0_hr, "registers") and len(qw0_hr.registers) >= 2:
-                        val = decode_float32(qw0_hr.registers[0], qw0_hr.registers[1])
-                        state["vfd_out_hz"] = round(val, 1)
-                        reads_succeeded += 1
-            except Exception as e:
-                logger.debug(f"QW0 read error: {e}")
-
-            # ------------------------------------------------------------------
-            # 4. Read Electrical Telemetry: TD3 (Voltage), TD4 (Current), TD4/5 (PF)
-            # Starting at address 1541 (Modbus 41542), 6 registers (float32 each)
-            # ------------------------------------------------------------------
-            try:
-                td_r = await call_modbus(client.read_holding_registers, address=1541, count=6, unit_id=PLC_UNIT_ID)
-                if not td_r.isError() and hasattr(td_r, "registers") and len(td_r.registers) >= 6:
-                    regs = td_r.registers
-                    state["voltage_td3"] = round(decode_float32(regs[0], regs[1]), 1)
-                    state["current_td4"] = round(decode_float32(regs[2], regs[3]), 2)
-                    state["power_factor_td5"] = round(decode_float32(regs[4], regs[5]), 2)
-                    reads_succeeded += 1
-                else:
-                    # Fallback 1542 (0-based)
-                    td_r2 = await call_modbus(client.read_holding_registers, address=1542, count=6, unit_id=PLC_UNIT_ID)
-                    if not td_r2.isError() and hasattr(td_r2, "registers") and len(td_r2.registers) >= 6:
-                        regs = td_r2.registers
-                        state["voltage_td3"] = round(decode_float32(regs[0], regs[1]), 1)
-                        state["current_td4"] = round(decode_float32(regs[2], regs[3]), 2)
-                        state["power_factor_td5"] = round(decode_float32(regs[4], regs[5]), 2)
-                        reads_succeeded += 1
-            except Exception as e:
-                logger.debug(f"TD3-TD5 read error: {e}")
+            # Discovery scan if not locked onto working address yet
+            if val_found is None:
+                for fn, addr, desc, offset in candidate_list:
+                    try:
+                        resp = await fn(client, addr, PLC_UNIT_ID)
+                        if not resp.isError() and hasattr(resp, "registers") and resp.registers:
+                            val_found = resp.registers[0]
+                            active_read_fn = fn
+                            active_address = addr
+                            active_offset = offset
+                            state["address_detected"] = f"{desc}"
+                            logger.info(f"✓ Locked onto IW0 at {desc}! Value: {val_found}")
+                            break
+                    except Exception:
+                        continue
 
             t_elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
-            if reads_succeeded > 0:
+            if val_found is not None:
                 state["connected"] = True
                 state["rtt_ms"] = round(t_elapsed_ms, 1)
+                raw_int16 = val_found if val_found < 32768 else val_found - 65536
+                state["iw0_value"] = raw_int16
                 now_str = datetime.now().strftime("%H:%M:%S")
                 state["last_update"] = now_str
+
+                # Keep last 50 historical points for live trend chart
                 state["history"].append({
                     "time": now_str,
                     "iw0": state["iw0_value"],
@@ -213,7 +187,61 @@ async def modbus_polling_task():
                 if len(state["history"]) > 50:
                     state["history"].pop(0)
 
-            # Broadcast to connected browser clients
+            # ------------------------------------------------------------------
+            # 2. Read Cycles MX2..MX5 (Coils 514..517 or 513..516)
+            # ------------------------------------------------------------------
+            try:
+                cycle_addr = 514 if active_offset == 0 else 513
+                coils = await call_modbus(client.read_coils, address=cycle_addr, count=4, unit_id=PLC_UNIT_ID)
+                if not coils.isError() and hasattr(coils, "bits") and len(coils.bits) >= 4:
+                    state["cycle_1"] = bool(coils.bits[0])
+                    state["cycle_2"] = bool(coils.bits[1])
+                    state["cycle_3"] = bool(coils.bits[2])
+                    state["cycle_4"] = bool(coils.bits[3])
+                else:
+                    # Alternative: Discrete Inputs FC 02
+                    di = await call_modbus(client.read_discrete_inputs, address=cycle_addr, count=4, unit_id=PLC_UNIT_ID)
+                    if not di.isError() and hasattr(di, "bits") and len(di.bits) >= 4:
+                        state["cycle_1"] = bool(di.bits[0])
+                        state["cycle_2"] = bool(di.bits[1])
+                        state["cycle_3"] = bool(di.bits[2])
+                        state["cycle_4"] = bool(di.bits[3])
+            except Exception:
+                pass
+
+            # ------------------------------------------------------------------
+            # 3. Read Scaled Out / VFD Out QW0 (Float32 in Hz)
+            # ------------------------------------------------------------------
+            try:
+                qw0_addr = active_address if active_address is not None else (767 if active_offset == -1 else 768)
+                qw0_r = await call_modbus(client.read_input_registers, address=qw0_addr, count=2, unit_id=PLC_UNIT_ID)
+                if not qw0_r.isError() and hasattr(qw0_r, "registers") and len(qw0_r.registers) >= 2:
+                    val = decode_float32(qw0_r.registers[0], qw0_r.registers[1])
+                    state["vfd_out_hz"] = round(val, 1)
+                else:
+                    qw0_hr = await call_modbus(client.read_holding_registers, address=qw0_addr, count=2, unit_id=PLC_UNIT_ID)
+                    if not qw0_hr.isError() and hasattr(qw0_hr, "registers") and len(qw0_hr.registers) >= 2:
+                        val = decode_float32(qw0_hr.registers[0], qw0_hr.registers[1])
+                        state["vfd_out_hz"] = round(val, 1)
+            except Exception:
+                pass
+
+            # ------------------------------------------------------------------
+            # 4. Read Electrical Telemetry: TD3 (Voltage), TD4 (Current), TD4/5 (PF)
+            # Starting at address 1541 (1-based) or 1542 (0-based)
+            # ------------------------------------------------------------------
+            try:
+                td_addr = 1541 if active_offset == -1 else 1542
+                td_r = await call_modbus(client.read_holding_registers, address=td_addr, count=6, unit_id=PLC_UNIT_ID)
+                if not td_r.isError() and hasattr(td_r, "registers") and len(td_r.registers) >= 6:
+                    regs = td_r.registers
+                    state["voltage_td3"] = round(decode_float32(regs[0], regs[1]), 1)
+                    state["current_td4"] = round(decode_float32(regs[2], regs[3]), 2)
+                    state["power_factor_td5"] = round(decode_float32(regs[4], regs[5]), 2)
+            except Exception:
+                pass
+
+            # Broadcast state to connected WebSocket clients
             if active_websockets:
                 payload = json.dumps(state)
                 dead = set()
@@ -225,7 +253,7 @@ async def modbus_polling_task():
                 active_websockets.difference_update(dead)
 
         except Exception as e:
-            logger.warning(f"Modbus loop error: {e}")
+            logger.warning(f"Modbus poll cycle error: {e}")
             state["connected"] = False
             if client:
                 try:
@@ -233,6 +261,7 @@ async def modbus_polling_task():
                 except Exception:
                     pass
                 client = None
+            await asyncio.sleep(2.0)
 
         await asyncio.sleep(0.2)  # 5 Hz update rate
 
@@ -273,65 +302,63 @@ async def get_dashboard():
       --green: #10b981;
       --amber: #f59e0b;
       --blue: #3b82f6;
-      --purple: #a855f7;
+      --purple: #8b5cf6;
       --red: #ef4444;
       --text: #f9fafb;
       --text-muted: #9ca3af;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      background-color: var(--bg);
+      background: var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      padding: 16px;
       min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
     }
     .container {
-      width: 100%;
-      max-width: 1100px;
+      max-width: 1200px;
+      margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 16px;
     }
     header {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding-bottom: 16px;
-      border-bottom: 1px solid var(--border);
       flex-wrap: wrap;
       gap: 12px;
     }
     h1 {
-      font-size: 22px;
-      font-weight: 800;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
       color: #fff;
-      display: flex;
-      align-items: center;
-      gap: 10px;
     }
     .badge {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
       padding: 6px 14px;
       border-radius: 9999px;
       font-size: 13px;
-      font-weight: 700;
+      font-weight: 600;
+      text-transform: uppercase;
       letter-spacing: 0.5px;
     }
     .badge.online {
       background: rgba(16, 185, 129, 0.15);
-      border: 1px solid rgba(16, 185, 129, 0.5);
       color: var(--green);
+      border: 1px solid rgba(16, 185, 129, 0.3);
     }
     .badge.offline {
       background: rgba(239, 68, 68, 0.15);
-      border: 1px solid rgba(239, 68, 68, 0.5);
       color: var(--red);
+      border: 1px solid rgba(239, 68, 68, 0.3);
     }
     .dot {
       width: 8px;
@@ -344,15 +371,14 @@ async def get_dashboard():
       background: var(--card-bg);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 20px;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+      padding: 18px 20px;
     }
     .section-title {
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 1px;
-      color: var(--cyan);
+      color: var(--text-muted);
       margin-bottom: 14px;
       display: flex;
       justify-content: space-between;
@@ -360,48 +386,49 @@ async def get_dashboard():
     }
     .cycles-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 12px;
     }
     .cycle-card {
-      background: rgba(0, 0, 0, 0.35);
+      background: #0f172a;
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 16px;
-      text-align: center;
-      transition: all 0.25s ease;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: all 0.2s ease;
     }
     .cycle-card.active {
-      background: rgba(16, 185, 129, 0.15);
-      border-color: rgba(16, 185, 129, 0.6);
-      box-shadow: 0 0 16px rgba(16, 185, 129, 0.25);
+      border-color: var(--green);
+      background: rgba(16, 185, 129, 0.08);
+      box-shadow: 0 0 16px rgba(16, 185, 129, 0.15);
     }
     .cycle-label {
       font-size: 11px;
-      font-weight: 700;
-      color: var(--text-muted);
+      font-weight: 600;
       text-transform: uppercase;
+      color: var(--text-muted);
     }
     .cycle-name {
-      font-size: 17px;
-      font-weight: 800;
+      font-size: 18px;
+      font-weight: 700;
       color: #fff;
-      margin: 4px 0;
     }
     .cycle-meta {
       font-family: monospace;
       font-size: 11px;
-      color: #9ca3af;
+      color: var(--text-muted);
     }
     .cycle-pill {
-      display: inline-block;
-      margin-top: 10px;
-      padding: 3px 14px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 800;
-      background: #1f2937;
-      color: #6b7280;
+      align-self: flex-start;
+      margin-top: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.06);
+      color: var(--text-muted);
     }
     .cycle-card.active .cycle-pill {
       background: var(--green);
@@ -467,7 +494,7 @@ async def get_dashboard():
       <div>
         <h1>Selec MiBRX-6M SCADA Dashboard</h1>
         <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">
-          Modbus TCP Master &bull; <strong>192.168.1.50:502</strong> (Slave ID 1)
+          Modbus TCP Master &bull; <strong>192.168.1.50:502</strong> (Slave ID 1) &bull; <span id="lock-info" style="color: var(--cyan); font-weight: 600;">Scanning...</span>
         </div>
       </div>
       <div id="conn-badge" class="badge offline">
@@ -659,15 +686,19 @@ async def get_dashboard():
     }
 
     function updateUI(data) {
-      // 1. Connection Badge
+      // 1. Connection Badge & Lock Info
       const badge = document.getElementById('conn-badge');
       const text = document.getElementById('conn-text');
       if (data.connected) {
         badge.className = 'badge online';
-        text.textContent = 'PLC CONNECTED';
+        text.textContent = 'PLC ONLINE (' + data.rtt_ms + ' ms)';
       } else {
         badge.className = 'badge offline';
         text.textContent = 'PLC OFFLINE';
+      }
+
+      if (data.address_detected) {
+        document.getElementById('lock-info').textContent = 'Locked on: ' + data.address_detected;
       }
 
       // 2. Cycles MX2..MX5
