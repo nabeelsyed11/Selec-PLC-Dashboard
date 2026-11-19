@@ -179,9 +179,9 @@ class SelecModbusClient:
             self.diagnostics.connected = True
             return True
 
-        # Throttle reconnection attempts to at most once every 3.0s unless forced
+        # Throttle reconnection attempts to at most once every 1.0s unless forced
         now = time.monotonic()
-        if not force and now - self._last_reconnect_time < 3.0:
+        if not force and now - self._last_reconnect_time < 1.0:
             return self.diagnostics.connected
 
         if self._reconnect_lock is None:
@@ -192,7 +192,7 @@ class SelecModbusClient:
 
         async with self._reconnect_lock:
             now = time.monotonic()
-            if not force and now - self._last_reconnect_time < 3.0:
+            if not force and now - self._last_reconnect_time < 1.0:
                 return self.diagnostics.connected
             self._last_reconnect_time = now
 
@@ -202,17 +202,18 @@ class SelecModbusClient:
                         self.client.close()
                     except Exception:
                         pass
+                logger.info(f"Opening Modbus TCP socket to Selec PLC at {self.host}:{self.port}...")
                 self.client = AsyncModbusTcpClient(self.host, port=self.port, timeout=max(2.5, self.timeout))
                 connected = await asyncio.wait_for(self.client.connect(), timeout=max(2.5, self.timeout))
                 self.diagnostics.connected = bool(connected)
                 if connected:
-                    logger.info(f"Connected to physical Selec MiBRX-6M PLC at {self.host}:{self.port}")
+                    logger.info(f"✓ CONNECTED to physical Selec MiBRX-6M PLC at {self.host}:{self.port}")
                 else:
-                    logger.warning(f"Failed to connect to PLC at {self.host}:{self.port}. Polling loop will retry.")
+                    logger.warning(f"✗ Failed to connect to PLC at {self.host}:{self.port}. Retrying in background...")
                 return bool(connected)
             except (asyncio.TimeoutError, Exception) as e:
                 self.diagnostics.connected = False
-                logger.debug(f"Connection attempt to PLC at {self.host}:{self.port} failed: {e}")
+                logger.warning(f"✗ Connection attempt to PLC at {self.host}:{self.port} failed: {e}")
                 return False
 
     async def disconnect(self):
@@ -451,7 +452,10 @@ class SelecModbusClient:
 
     async def _read_coils(self, address: int, count: int) -> List[bool]:
         """Low-level read coils FC 01 with fallback to Read Discrete Inputs FC 02."""
-        if self.client and self.client.connected:
+        if not self.simulation_mode and not (self.client and getattr(self.client, "connected", False)):
+            await self.connect()
+
+        if self.client and getattr(self.client, "connected", False):
             async with self.io_lock:
                 resp = await call_modbus(self.client.read_coils, address=address, count=count, unit_id=self.unit_id)
                 if resp.isError() or not hasattr(resp, "bits"):
@@ -486,7 +490,10 @@ class SelecModbusClient:
 
     async def _read_discrete_inputs(self, address: int, count: int) -> List[bool]:
         """Low-level read discrete inputs FC 02 with fallback to Read Coils FC 01."""
-        if self.client and self.client.connected:
+        if not self.simulation_mode and not (self.client and getattr(self.client, "connected", False)):
+            await self.connect()
+
+        if self.client and getattr(self.client, "connected", False):
             async with self.io_lock:
                 resp = await call_modbus(self.client.read_discrete_inputs, address=address, count=count, unit_id=self.unit_id)
                 if resp.isError():
@@ -508,7 +515,10 @@ class SelecModbusClient:
 
     async def _read_registers(self, address: int, count: int, function_code: int = 3) -> List[int]:
         """Low-level register reader supporting FC 03 (Holding) and FC 04 (Input) with mutual fallback."""
-        if self.client and self.client.connected:
+        if not self.simulation_mode and not (self.client and getattr(self.client, "connected", False)):
+            await self.connect()
+
+        if self.client and getattr(self.client, "connected", False):
             async with self.io_lock:
                 primary_fn = self.client.read_input_registers if function_code == 4 else self.client.read_holding_registers
                 secondary_fn = self.client.read_holding_registers if function_code == 4 else self.client.read_input_registers
