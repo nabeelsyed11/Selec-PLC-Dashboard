@@ -263,6 +263,11 @@ class MockPlcState:
 
     def read_coils(self, address: int) -> bool:
         """Handle Modbus FC 01 read coils."""
+        if address in (514, 515, 516, 517):
+            # Sequentially cycle 1 -> 2 -> 3 -> 4 every 3 seconds for SCADA simulation
+            active_cycle_addr = 514 + (int(time.time() / 3.0) % 4)
+            return address == active_cycle_addr
+
         mapping = {
             0: self.pusher_cmd,
             1: self.vfd_run_cmd,

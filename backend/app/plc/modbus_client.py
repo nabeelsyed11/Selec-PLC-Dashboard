@@ -270,64 +270,72 @@ class SelecModbusClient:
         measurements: Dict[str, Any] = {}
         successful_reads = 0
 
-        # 1. Read Discrete Inputs (for fast_group)
+        # 1. Read Discrete Inputs & Coils (for fast_group)
         if group_name == "fast_group":
             discrete_sigs = [s for s in self.config.discrete_signals if s.group == group_name]
             if discrete_sigs:
-                min_addr = min(s.address for s in discrete_sigs)
-                max_addr = max(s.address for s in discrete_sigs)
-                count = (max_addr - min_addr) + 1
-                try:
-                    bits = await self._read_discrete_inputs(min_addr, count)
-                    t_response_mono = time.perf_counter()
-                    t_response_utc = datetime.now(timezone.utc).isoformat()
-                    rtt_ms = (t_response_mono - t_request_mono) * 1000.0
-                    successful_reads += 1
+                chunks = self._group_discrete_signals(discrete_sigs)
+                for chunk in chunks:
+                    sig_type = chunk["type"]
+                    min_addr = chunk["start_address"]
+                    count = chunk["count"]
+                    chunk_sigs = chunk["signals"]
+                    t_chunk_mono = time.perf_counter()
+                    t_chunk_utc = datetime.now(timezone.utc).isoformat()
+                    try:
+                        if sig_type == "coil":
+                            bits = await self._read_coils(min_addr, count)
+                        else:
+                            bits = await self._read_discrete_inputs(min_addr, count)
+                        t_response_mono = time.perf_counter()
+                        t_response_utc = datetime.now(timezone.utc).isoformat()
+                        rtt_ms = (t_response_mono - t_chunk_mono) * 1000.0
+                        successful_reads += 1
 
-                    for sig in discrete_sigs:
-                        idx = sig.address - min_addr
-                        val = bits[idx] if idx < len(bits) else False
-                        measurements[sig.name] = {
-                            "name": sig.name,
-                            "raw_value": 1 if val else 0,
-                            "value": 1 if val else 0,
-                            "unit": "",
-                            "quality": "VALID" if not self.simulation_mode else "SIMULATED",
-                            "group": group_name,
-                            "t_request": t_request_utc,
-                            "t_response": t_response_utc,
-                            "t_request_mono": t_request_mono,
-                            "t_response_mono": t_response_mono,
-                            "rtt_ms": rtt_ms,
-                        }
-                except Exception as e:
-                    logger.debug(f"Discrete input read failed for {group_name}: {e}")
-                    # If discrete inputs fail (e.g. FC 02 unsupported by PLC), record placeholder but do not kill connection
-                    for sig in discrete_sigs:
-                        measurements[sig.name] = {
-                            "name": sig.name,
-                            "raw_value": 0,
-                            "value": 0,
-                            "unit": "",
-                            "quality": "DISCONNECTED" if not self.simulation_mode else "SIMULATED",
-                            "group": group_name,
-                            "t_request": t_request_utc,
-                            "t_response": None,
-                            "t_request_mono": t_request_mono,
-                            "t_response_mono": t_request_mono,
-                            "rtt_ms": 0.0,
-                        }
+                        for sig in chunk_sigs:
+                            idx = sig.address - min_addr
+                            val = bits[idx] if idx < len(bits) else False
+                            measurements[sig.name] = {
+                                "name": sig.name,
+                                "raw_value": 1 if val else 0,
+                                "value": 1 if val else 0,
+                                "unit": "",
+                                "quality": "VALID" if not self.simulation_mode else "SIMULATED",
+                                "group": group_name,
+                                "t_request": t_chunk_utc,
+                                "t_response": t_response_utc,
+                                "t_request_mono": t_chunk_mono,
+                                "t_response_mono": t_response_mono,
+                                "rtt_ms": rtt_ms,
+                            }
+                    except Exception as e:
+                        logger.debug(f"{sig_type} read failed for block starting {min_addr}: {e}")
+                        for sig in chunk_sigs:
+                            measurements[sig.name] = {
+                                "name": sig.name,
+                                "raw_value": 0,
+                                "value": 0,
+                                "unit": "",
+                                "quality": "DISCONNECTED" if not self.simulation_mode else "SIMULATED",
+                                "group": group_name,
+                                "t_request": t_chunk_utc,
+                                "t_response": None,
+                                "t_request_mono": t_chunk_mono,
+                                "t_response_mono": t_chunk_mono,
+                                "rtt_ms": 0.0,
+                            }
 
         # 2. Read Numerical Holding Registers in contiguous blocks
         blocks = self.group_blocks.get(group_name, [])
         for block in blocks:
             start_addr = block["start_address"]
             count = block["count"]
+            fc = block.get("function_code", 3)
             t_req_mono = time.perf_counter()
             t_req_utc = datetime.now(timezone.utc).isoformat()
 
             try:
-                registers = await self._read_holding_registers(start_addr, count)
+                registers = await self._read_registers(start_addr, count, function_code=fc)
                 t_resp_mono = time.perf_counter()
                 t_resp_utc = datetime.now(timezone.utc).isoformat()
                 rtt_ms = (t_resp_mono - t_req_mono) * 1000.0
@@ -404,6 +412,61 @@ class SelecModbusClient:
                 self._on_measurement_callback(measurements)
             return False
 
+    def _group_discrete_signals(self, signals: List[Any]) -> List[Dict[str, Any]]:
+        """Groups discrete signals by type (coil vs discrete_input) and contiguous address ranges."""
+        if not signals:
+            return []
+        sorted_sigs = sorted(signals, key=lambda s: (s.type, s.address))
+        chunks: List[Dict[str, Any]] = []
+        current = {
+            "type": sorted_sigs[0].type,
+            "start_address": sorted_sigs[0].address,
+            "count": 1,
+            "signals": [sorted_sigs[0]],
+        }
+        for s in sorted_sigs[1:]:
+            curr_end = current["start_address"] + current["count"]
+            if s.type == current["type"] and (s.address - curr_end) <= 2:
+                current["count"] = (s.address + 1) - current["start_address"]
+                current["signals"].append(s)
+            else:
+                chunks.append(current)
+                current = {
+                    "type": s.type,
+                    "start_address": s.address,
+                    "count": 1,
+                    "signals": [s],
+                }
+        chunks.append(current)
+        return chunks
+
+    async def _read_coils(self, address: int, count: int) -> List[bool]:
+        """Low-level read coils FC 01 with fallback to Read Discrete Inputs FC 02."""
+        if self.client and self.client.connected:
+            resp = await call_modbus(self.client.read_coils, address=address, count=count, unit_id=self.unit_id)
+            if resp.isError() or not hasattr(resp, "bits"):
+                # Attempt address - 1 (1-based to 0-based offset tolerance)
+                try:
+                    resp_adj = await call_modbus(self.client.read_coils, address=max(0, address - 1), count=count, unit_id=self.unit_id)
+                    if not resp_adj.isError() and hasattr(resp_adj, "bits"):
+                        return resp_adj.bits[:count]
+                except Exception:
+                    pass
+                # Attempt fallback to Discrete Inputs FC 02
+                try:
+                    resp_di = await call_modbus(self.client.read_discrete_inputs, address=address, count=count, unit_id=self.unit_id)
+                    if not resp_di.isError() and hasattr(resp_di, "bits"):
+                        return resp_di.bits[:count]
+                except Exception:
+                    pass
+                raise ModbusException(f"Modbus error reading coils at {address}: {resp}")
+            return resp.bits[:count]
+
+        if self.simulation_mode:
+            return [global_mock_plc.read_coils(address + i) for i in range(count)]
+
+        raise ModbusException(f"PLC not connected at {self.host}:{self.port}")
+
     async def _read_discrete_inputs(self, address: int, count: int) -> List[bool]:
         """Low-level read discrete inputs FC 02 with fallback to Read Coils FC 01."""
         if self.client and self.client.connected:
@@ -425,26 +488,40 @@ class SelecModbusClient:
         
         raise ModbusException(f"PLC not connected at {self.host}:{self.port}")
 
-    async def _read_holding_registers(self, address: int, count: int) -> List[int]:
-        """Low-level read holding registers FC 03 with fallback to Read Input Registers FC 04."""
+    async def _read_registers(self, address: int, count: int, function_code: int = 3) -> List[int]:
+        """Low-level register reader supporting FC 03 (Holding) and FC 04 (Input) with mutual fallback."""
         if self.client and self.client.connected:
-            resp = await call_modbus(self.client.read_holding_registers, address=address, count=count, unit_id=self.unit_id)
-            if resp.isError():
-                # Attempt fallback to Read Input Registers (FC 04) if FC 03 returns error
+            primary_fn = self.client.read_input_registers if function_code == 4 else self.client.read_holding_registers
+            secondary_fn = self.client.read_holding_registers if function_code == 4 else self.client.read_input_registers
+
+            resp = await call_modbus(primary_fn, address=address, count=count, unit_id=self.unit_id)
+            if resp.isError() or not hasattr(resp, "registers"):
+                # Fallback 1: try secondary function code at same address
                 try:
-                    resp_ir = await call_modbus(self.client.read_input_registers, address=address, count=count, unit_id=self.unit_id)
-                    if not resp_ir.isError() and hasattr(resp_ir, "registers"):
-                        return resp_ir.registers[:count]
+                    resp_sec = await call_modbus(secondary_fn, address=address, count=count, unit_id=self.unit_id)
+                    if not resp_sec.isError() and hasattr(resp_sec, "registers"):
+                        return resp_sec.registers[:count]
                 except Exception:
                     pass
-                raise ModbusException(f"Modbus error reading holding registers: {resp}")
+                # Fallback 2: try 1-based offset tolerance (address - 1)
+                for fn in (primary_fn, secondary_fn):
+                    try:
+                        resp_adj = await call_modbus(fn, address=max(0, address - 1), count=count, unit_id=self.unit_id)
+                        if not resp_adj.isError() and hasattr(resp_adj, "registers"):
+                            return resp_adj.registers[:count]
+                    except Exception:
+                        pass
+                raise ModbusException(f"Modbus error reading registers at {address}: {resp}")
             return resp.registers[:count]
 
-        # ONLY simulate if explicitly in simulation mode!
         if self.simulation_mode:
             return self._simulate_holding_registers(address, count)
 
         raise ModbusException(f"PLC not connected at {self.host}:{self.port}")
+
+    async def _read_holding_registers(self, address: int, count: int) -> List[int]:
+        """Legacy alias pointing to _read_registers."""
+        return await self._read_registers(address, count, function_code=3)
 
     def _simulate_holding_registers(self, address: int, count: int) -> List[int]:
         """Maps global_mock_plc physical state to raw 16-bit Modbus registers."""
@@ -480,6 +557,13 @@ class SelecModbusClient:
         regs[16], regs[17] = float_to_regs(state.power_factor)
         regs[18] = int(state.grid_frequency_hz * 100.0) & 0xFFFF
         regs[20], regs[21] = float_to_regs(state.cumulative_kwh)
+
+        # SCADA QW0 / IW0 / Electrical registers
+        regs[767] = 50  # IW0 Integer
+        regs[767], regs[768] = float_to_regs(state.vfd_current_speed_hz)  # QW0 VFD Out (Hz)
+        regs[1541], regs[1542] = float_to_regs(state.mains_voltage_v)      # TD3 Voltage (V)
+        regs[1543], regs[1544] = float_to_regs(state.mains_current_a)      # TD4 Current (A)
+        regs[1545], regs[1546] = float_to_regs(state.power_factor)         # TD4/TD5 Power Factor (PF)
 
         # VFD feedback
         regs[25] = int(state.vfd_current_speed_hz * 10.0) & 0xFFFF

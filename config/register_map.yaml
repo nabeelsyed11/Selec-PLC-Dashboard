@@ -127,6 +127,35 @@ discrete_signals:
     group: "fast_group"
     normal_state: 0
 
+  # SCADA Cycle Sequencer Coils (MX2 - MX5)
+  - name: "cycle_1_mx2"
+    description: "First Cycle Active Feedback (MX2)"
+    type: "coil"
+    address: 514
+    group: "fast_group"
+    normal_state: 0
+
+  - name: "cycle_2_mx3"
+    description: "Second Cycle Active Feedback (MX3)"
+    type: "coil"
+    address: 515
+    group: "fast_group"
+    normal_state: 0
+
+  - name: "cycle_3_mx4"
+    description: "Third Cycle Active Feedback (MX4)"
+    type: "coil"
+    address: 516
+    group: "fast_group"
+    normal_state: 0
+
+  - name: "cycle_4_mx5"
+    description: "Fourth Cycle Active Feedback (MX5)"
+    type: "coil"
+    address: 517
+    group: "fast_group"
+    normal_state: 0
+
 # ------------------------------------------------------------------------------
 # Analog & Numerical Registers (Holding Registers FC 03)
 # ------------------------------------------------------------------------------
@@ -142,6 +171,60 @@ numerical_signals:
     offset: 0.0
     engineering_unit: "raw"
     group: "fast_group"
+
+  # Scaled Out / VFD Out Frequency (QW0, Modbus 30768)
+  - name: "scaled_out_vfd_qw0"
+    description: "Scaled Out / VFD Out Frequency (QW0, Modbus 30768)"
+    address: 767
+    register_count: 2
+    function_code: 4
+    data_type: "float32"
+    byte_order: "big"
+    word_swap: false
+    scaling_factor: 1.0
+    offset: 0.0
+    engineering_unit: "Hz"
+    group: "fast_group"
+
+  # Electrical Power Telemetry (TD3, TD4, TD4/5)
+  - name: "mains_voltage_td3"
+    description: "Mains Voltage (TD3, Modbus 41542)"
+    address: 1541
+    register_count: 2
+    function_code: 3
+    data_type: "float32"
+    byte_order: "big"
+    word_swap: false
+    scaling_factor: 1.0
+    offset: 0.0
+    engineering_unit: "V"
+    group: "medium_group"
+
+  - name: "mains_current_td4"
+    description: "Load Current (TD4, Modbus 41544)"
+    address: 1543
+    register_count: 2
+    function_code: 3
+    data_type: "float32"
+    byte_order: "big"
+    word_swap: false
+    scaling_factor: 1.0
+    offset: 0.0
+    engineering_unit: "A"
+    group: "medium_group"
+
+  - name: "power_factor_td5"
+    description: "Power Factor (TD4/TD5, Modbus 41546)"
+    address: 1545
+    register_count: 2
+    function_code: 3
+    data_type: "float32"
+    byte_order: "big"
+    word_swap: false
+    scaling_factor: 1.0
+    offset: 0.0
+    engineering_unit: "PF"
+    group: "medium_group"
 
   # 1. Load Cell
   - name: "load_cell_weight"

@@ -53,6 +53,17 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
   const vfdRunning = signals.vfd_running_status?.value === 1;
   const beltSlip = signals.belt_slip_sensor?.value === 1;
 
+  // New SCADA Registers
+  const cycle1 = signals.cycle_1_mx2?.value === 1;
+  const cycle2 = signals.cycle_2_mx3?.value === 1;
+  const cycle3 = signals.cycle_3_mx4?.value === 1;
+  const cycle4 = signals.cycle_4_mx5?.value === 1;
+  const vfdOutHz = signals.scaled_out_vfd_qw0?.value ?? signals.vfd_output_frequency?.value ?? 0;
+  const iw0Raw = signals.plc_input_iw0?.value ?? 0;
+  const voltageTd3 = signals.mains_voltage_td3?.value ?? signals.mains_voltage_v?.value ?? 0;
+  const currentTd4 = signals.mains_current_td4?.value ?? signals.mains_current_a?.value ?? 0;
+  const pfTd5 = signals.power_factor_td5?.value ?? signals.power_factor?.value ?? 0;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
       {/* Top Machine Status Banner */}
@@ -136,6 +147,148 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
           </div>
         </div>
       )}
+
+      {/* SCADA Process Cycle Sequencer (MX2 - MX5) */}
+      <div className="glass-panel" style={{ padding: "20px 24px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+          <div style={{ fontSize: "13px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px", color: "var(--primary-cyan)", display: "flex", alignItems: "center", gap: "8px" }}>
+            <RotateCw style={{ width: "16px", height: "16px" }} />
+            SCADA Process Cycle Sequencer (MX2 - MX5)
+          </div>
+          <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+            Modbus Coils: <strong>514 - 517</strong>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
+          {[
+            { num: 1, name: "First Cycle", plc: "MX2", mb: 514, active: cycle1 },
+            { num: 2, name: "Second Cycle", plc: "MX3", mb: 515, active: cycle2 },
+            { num: 3, name: "Third Cycle", plc: "MX4", mb: 516, active: cycle3 },
+            { num: 4, name: "Fourth Cycle", plc: "MX5", mb: 517, active: cycle4 },
+          ].map((c) => (
+            <div
+              key={c.num}
+              style={{
+                background: c.active ? "rgba(16, 185, 129, 0.15)" : "rgba(0, 0, 0, 0.3)",
+                border: c.active ? "1px solid rgba(16, 185, 129, 0.6)" : "1px solid var(--border-subtle)",
+                boxShadow: c.active ? "0 0 15px rgba(16, 185, 129, 0.25)" : "none",
+                borderRadius: "10px",
+                padding: "16px",
+                textAlign: "center",
+                transition: "all 0.2s ease",
+              }}
+            >
+              <div style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                {c.name}
+              </div>
+              <div style={{ fontSize: "16px", fontWeight: 800, color: "#fff", margin: "4px 0" }}>
+                Cycle {c.num}
+              </div>
+              <div className="mono" style={{ fontSize: "11px", color: "#9ca3af" }}>
+                PLC: <strong>{c.plc}</strong> | Modbus: {c.mb}
+              </div>
+              <div
+                style={{
+                  display: "inline-block",
+                  marginTop: "10px",
+                  padding: "3px 12px",
+                  borderRadius: "20px",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  backgroundColor: c.active ? "#10b981" : "#1f2937",
+                  color: c.active ? "#000" : "#6b7280",
+                }}
+              >
+                {c.active ? "ACTIVE" : "STANDBY"}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* SCADA Drive & Electrical Telemetry Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" }}>
+        {/* VFD Scaled Out Frequency (QW0) */}
+        <div className="glass-panel" style={{ padding: "20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
+            <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "var(--primary-cyan)" }}>
+              Scaled Out / VFD Out
+            </span>
+            <span className="mono" style={{ fontSize: "11px" }}>QW0 (30768)</span>
+          </div>
+          <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
+            {vfdOutHz.toFixed(1)} <span style={{ fontSize: "18px", color: "var(--primary-cyan)" }}>Hz</span>
+          </div>
+          <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
+            PLC Scaled Drive Output (Real float32)
+          </div>
+        </div>
+
+        {/* Process Input Word (IW0) */}
+        <div className="glass-panel" style={{ padding: "20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
+            <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#34d399" }}>
+              Process Input (IW0)
+            </span>
+            <span className="mono" style={{ fontSize: "11px" }}>IW0 (40768)</span>
+          </div>
+          <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
+            {iw0Raw} <span style={{ fontSize: "18px", color: "#34d399" }}>raw</span>
+          </div>
+          <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
+            PLC Input Register (Integer int16)
+          </div>
+        </div>
+
+        {/* Mains Voltage (TD3) */}
+        <div className="glass-panel" style={{ padding: "20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
+            <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#f59e0b" }}>
+              Mains Voltage
+            </span>
+            <span className="mono" style={{ fontSize: "11px" }}>TD3 (41542)</span>
+          </div>
+          <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
+            {voltageTd3.toFixed(1)} <span style={{ fontSize: "18px", color: "#f59e0b" }}>V</span>
+          </div>
+          <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
+            AC Line Potential (Real float32)
+          </div>
+        </div>
+
+        {/* Load Current (TD4) */}
+        <div className="glass-panel" style={{ padding: "20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
+            <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#60a5fa" }}>
+              Load Current
+            </span>
+            <span className="mono" style={{ fontSize: "11px" }}>TD4 (41544)</span>
+          </div>
+          <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
+            {currentTd4.toFixed(2)} <span style={{ fontSize: "18px", color: "#60a5fa" }}>A</span>
+          </div>
+          <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
+            Mains Current Draw (Real float32)
+          </div>
+        </div>
+
+        {/* Power Factor (TD4/TD5) */}
+        <div className="glass-panel" style={{ padding: "20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
+            <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#c084fc" }}>
+              Power Factor
+            </span>
+            <span className="mono" style={{ fontSize: "11px" }}>TD4/5 (41546)</span>
+          </div>
+          <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
+            {pfTd5.toFixed(2)} <span style={{ fontSize: "18px", color: "#c084fc" }}>PF</span>
+          </div>
+          <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
+            Efficiency Factor (Real float32)
+          </div>
+        </div>
+      </div>
 
       {/* Primary KPI Grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px" }}>
