@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Selec MiBRX-6M IW0 (Address 40768) Simple Live Dashboard Launcher
+# Selec MiBRX-6M SCADA Live Dashboard Launcher
 # ==============================================================================
 set -e
 
@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "======================================================================"
-echo "    Selec PLC IW0 (Address 40768) Simple Live Dashboard              "
+echo "    Selec PLC SCADA Live Dashboard Launcher                           "
 echo "======================================================================"
 
 # Locate or create Linux virtual environment (venv)
@@ -32,10 +32,17 @@ if ! "$PYTHON_EXEC" -c "import fastapi, uvicorn, pymodbus" >/dev/null 2>&1; then
 fi
 
 PORT="${PORT:-8080}"
-echo "Launching Simple Dashboard on port $PORT..."
+echo "Launching SCADA Dashboard on port $PORT..."
 echo "Open your browser to: http://localhost:$PORT"
 echo "Target PLC: 192.168.1.50:502 (Modbus Unit ID: 1)"
 echo "Press Ctrl+C to stop."
 echo "======================================================================"
+
+# Auto-open browser in background if on desktop
+if [ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]; then
+    if command -v xdg-open >/dev/null 2>&1; then
+        (sleep 2 && xdg-open "http://localhost:$PORT" >/dev/null 2>&1) &
+    fi
+fi
 
 exec $PYTHON_EXEC simple_dashboard.py
