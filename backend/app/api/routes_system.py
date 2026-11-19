@@ -103,51 +103,92 @@ async def test_plc_connection(req: PLCTestRequest):
     Safely tests socket connectivity and Modbus communication against the target IP/port
     without altering active gateway monitoring loops.
     """
-    client = AsyncModbusTcpClient(req.plc_host, port=req.plc_port, timeout=req.timeout_seconds)
+    from app.main import app_state
     t0 = time.perf_counter()
-    try:
-        connected = await asyncio.wait_for(client.connect(), timeout=req.timeout_seconds)
-        if not connected:
+    used_existing = False
+
+    # If the main gateway is already connected to this target, test over the existing socket
+    # to avoid single-connection PLC port contention.
+    if (
+        app_state.modbus_client.client
+        and getattr(app_state.modbus_client.client, "connected", False)
+        and app_state.modbus_client.host == req.plc_host
+        and app_state.modbus_client.port == req.plc_port
+        and not app_state.modbus_client.simulation_mode
+    ):
+        client = app_state.modbus_client.client
+        used_existing = True
+    else:
+        client = AsyncModbusTcpClient(req.plc_host, port=req.plc_port, timeout=req.timeout_seconds)
+        try:
+            connected = await asyncio.wait_for(client.connect(), timeout=req.timeout_seconds)
+            if not connected:
+                return {
+                    "success": False,
+                    "message": f"Connection refused or timed out connecting to {req.plc_host}:{req.plc_port}. Ensure no other tool (e.g. simple_dashboard.py or modpoll) is holding port 502.",
+                    "rtt_ms": None,
+                }
+        except asyncio.TimeoutError:
             return {
                 "success": False,
-                "message": f"Connection refused or timed out connecting to {req.plc_host}:{req.plc_port}. Check IP, subnet, and PLC power.",
+                "message": f"Timeout ({req.timeout_seconds}s) connecting to {req.plc_host}:{req.plc_port}. Check PLC power/RUN mode and ensure no other Modbus client (like simple_dashboard.py or modpoll) is holding port 502.",
                 "rtt_ms": None,
             }
-        
-        # Test reading holding register 0 (or 1 in case of 1-based addressing)
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Error connecting to {req.plc_host}:{req.plc_port}: {e}",
+                "rtt_ms": None,
+            }
+
+    try:
+        # Test candidate registers: 767 (IW0 / 40768), 514 (Coil MX2), 1541 (Voltage), 0, 1
         r_resp = None
-        used_addr = 0
-        for test_addr in [0, 1]:
+        used_addr = 767
+        reg_type = "Holding Reg"
+
+        test_candidates = [
+            (client.read_holding_registers, 767, "Holding Reg 767 (Modbus 40768)"),
+            (client.read_input_registers, 767, "Input Reg 767 (Modbus 30768)"),
+            (client.read_coils, 514, "Coil 514 (MX2)"),
+            (client.read_holding_registers, 1541, "Holding Reg 1541 (TD3)"),
+            (client.read_holding_registers, 0, "Holding Reg 0"),
+            (client.read_holding_registers, 1, "Holding Reg 1"),
+        ]
+
+        for fn, addr, desc in test_candidates:
             try:
                 test_r = await asyncio.wait_for(
-                    call_modbus(client.read_holding_registers, address=test_addr, count=1, unit_id=req.plc_unit_id),
-                    timeout=req.timeout_seconds,
+                    call_modbus(fn, address=addr, count=1, unit_id=req.plc_unit_id),
+                    timeout=min(1.0, req.timeout_seconds),
                 )
                 if not test_r.isError():
                     r_resp = test_r
-                    used_addr = test_addr
+                    used_addr = addr
+                    reg_type = desc
                     break
                 elif r_resp is None:
                     r_resp = test_r
             except Exception:
                 pass
 
-        if r_resp is None:
+        t_elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+        if not used_existing:
             try:
-                r_resp = await asyncio.wait_for(
-                    call_modbus(client.read_input_registers, address=0, count=1, unit_id=req.plc_unit_id),
-                    timeout=req.timeout_seconds,
-                )
+                client.close()
             except Exception:
                 pass
 
-        t_elapsed_ms = (time.perf_counter() - t0) * 1000.0
-        client.close()
-
-        if r_resp is not None and not r_resp.isError() and hasattr(r_resp, "registers"):
+        if r_resp is not None and not r_resp.isError():
+            val = ""
+            if hasattr(r_resp, "registers") and r_resp.registers:
+                val = f", Value={r_resp.registers[0]}"
+            elif hasattr(r_resp, "bits") and r_resp.bits:
+                val = f", Bit={int(r_resp.bits[0])}"
             return {
                 "success": True,
-                "message": f"Successfully connected to Selec PLC at {req.plc_host}:{req.plc_port}! (RTT: {t_elapsed_ms:.1f} ms, Reg {used_addr}={r_resp.registers[0]})",
+                "message": f"Successfully connected to Selec PLC at {req.plc_host}:{req.plc_port}! (RTT: {t_elapsed_ms:.1f} ms, {reg_type}{val})",
                 "rtt_ms": round(t_elapsed_ms, 2),
                 "has_exception": False,
             }
@@ -169,7 +210,7 @@ async def test_plc_connection(req: PLCTestRequest):
     except asyncio.TimeoutError:
         return {
             "success": False,
-            "message": f"Timeout ({req.timeout_seconds}s) attempting to reach {req.plc_host}:{req.plc_port}. Check network cable & routing.",
+            "message": f"Timeout ({req.timeout_seconds}s) reading register from {req.plc_host}:{req.plc_port}. Check PLC RUN mode and Unit ID.",
             "rtt_ms": None,
         }
     except Exception as e:
