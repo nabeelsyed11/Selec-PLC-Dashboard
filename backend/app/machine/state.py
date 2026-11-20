@@ -23,29 +23,28 @@ class MachineStateManager:
         self,
         comm_connected: bool,
         is_stale: bool,
-        e_stop_ok: bool,
-        vfd_running: bool,
-        vfd_fault: bool,
-        belt_speed_mps: float,
-        has_critical_alarm: bool,
+        e_stop_ok: bool = True,
+        vfd_running: bool = False,
+        vfd_fault: bool = False,
+        belt_speed_mps: float = 0.0,
+        has_critical_alarm: bool = False,
+        cycle_active: bool = False,
+        vfd_hz: float = 0.0,
     ) -> str:
         """
         Calculates aggregate machine status:
         - COMM_LOST: Modbus connection broken or stale data
-        - FAULTED: E-Stop tripped, VFD faulted, or critical safety alarm
-        - RUNNING: Drive running and conveyor in motion
-        - IDLE: Powered and ready, but drive stopped
-        - STOPPED: Safety guard open or paused
+        - RUNNING: Any process cycle active (MX2..MX5), or VFD frequency > 0, or drive running
+        - IDLE: Powered and ready, Modbus link healthy
+        - FAULTED: Explicit VFD hardware fault trip
         """
         if not comm_connected or is_stale:
             return "COMM_LOST"
-        if not e_stop_ok or vfd_fault or has_critical_alarm:
+        if vfd_fault:
             return "FAULTED"
-        if vfd_running and belt_speed_mps > 0.05:
+        if cycle_active or (vfd_running and belt_speed_mps > 0.05) or (vfd_hz > 0.1) or vfd_running:
             return "RUNNING"
-        if not vfd_running:
-            return "IDLE"
-        return "STOPPED"
+        return "IDLE"
 
     def get_system_telemetry(self) -> Dict[str, Any]:
         """Edge Raspberry Pi 5 resource telemetry."""

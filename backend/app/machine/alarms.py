@@ -63,6 +63,11 @@ class AlarmsManager:
             return True
         return False
 
+    def clear_all(self):
+        """Clears all active alarms."""
+        self.active_alarms.clear()
+        logger.info("ALL ACTIVE ALARMS CLEARED")
+
     def has_critical(self) -> bool:
         return any(a.severity == "CRITICAL" for a in self.active_alarms.values())
 

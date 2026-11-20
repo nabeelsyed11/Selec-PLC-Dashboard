@@ -31,6 +31,20 @@ export const AlarmsPage: React.FC<Props> = ({ telemetry }) => {
     }
   };
 
+  const handleClearAll = async () => {
+    try {
+      const res = await fetch("/api/alarms/clear-all", {
+        method: "POST",
+      });
+      if (res.ok) {
+        setFeedback("All active alarms cleared.");
+        setTimeout(() => setFeedback(null), 3000);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const getSeverityStyle = (severity: string) => {
     switch (severity) {
       case "CRITICAL":
@@ -52,7 +66,22 @@ export const AlarmsPage: React.FC<Props> = ({ telemetry }) => {
               Active machine safety interlocks, process thresholds, and operator acknowledgement audit
             </p>
           </div>
-          <div>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            <button
+              onClick={handleClearAll}
+              style={{
+                padding: "6px 14px",
+                borderRadius: "6px",
+                fontSize: "12px",
+                fontWeight: 600,
+                background: "rgba(255, 255, 255, 0.08)",
+                border: "1px solid var(--border-color)",
+                color: "var(--text-main)",
+                cursor: "pointer",
+              }}
+            >
+              Clear All Alarms
+            </button>
             {isSim ? (
               <span style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 700, background: "rgba(168, 85, 247, 0.15)", border: "1px solid rgba(168, 85, 247, 0.4)", color: "#c084fc" }}>
                 SIMULATED ALARMS ACTIVE

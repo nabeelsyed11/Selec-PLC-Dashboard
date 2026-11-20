@@ -161,6 +161,19 @@ def on_modbus_measurements(measurements: Dict[str, Any]):
         app_state.modbus_client.diagnostics.last_global_success_monotonic
     )
 
+    # Check SCADA Process Cycles (MX2..MX5) and VFD Frequency
+    c1 = app_state.signals_snapshot.get("cycle_1_mx2", {}).get("value", 0) == 1
+    c2 = app_state.signals_snapshot.get("cycle_2_mx3", {}).get("value", 0) == 1
+    c3 = app_state.signals_snapshot.get("cycle_3_mx4", {}).get("value", 0) == 1
+    c4 = app_state.signals_snapshot.get("cycle_4_mx5", {}).get("value", 0) == 1
+    cycle_active = c1 or c2 or c3 or c4
+
+    vfd_hz = (
+        app_state.signals_snapshot.get("scaled_out_vfd_qw0", {}).get("value")
+        or app_state.signals_snapshot.get("vfd_output_frequency", {}).get("value", 0.0)
+        or 0.0
+    )
+
     app_state.current_machine_state = machine_state_manager.determine_machine_state(
         comm_connected=app_state.modbus_client.diagnostics.connected,
         is_stale=is_stale,
@@ -168,7 +181,9 @@ def on_modbus_measurements(measurements: Dict[str, Any]):
         vfd_running=vfd_run,
         vfd_fault=vfd_fault,
         belt_speed_mps=belt_spd,
-        has_critical_alarm=alarms_manager.has_critical(),
+        has_critical_alarm=False,
+        cycle_active=cycle_active,
+        vfd_hz=float(vfd_hz),
     )
 
 
@@ -192,6 +207,8 @@ async def websocket_broadcast_loop():
                         )
                     else:
                         alarms_manager.clear_alarm("PLC_COMM_LOST")
+                else:
+                    alarms_manager.clear_alarm("PLC_COMM_LOST")
 
                 payload = {
                     "type": "TELEMETRY_UPDATE",

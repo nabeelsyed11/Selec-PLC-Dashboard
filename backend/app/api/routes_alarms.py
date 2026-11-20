@@ -24,6 +24,13 @@ async def get_active_alarms():
     return {"alarms": alarms_manager.get_active_list()}
 
 
+@router.post("/clear-all")
+async def clear_all_alarms():
+    """Clears all active alarms."""
+    alarms_manager.clear_all()
+    return {"status": "cleared", "active_count": 0}
+
+
 @router.post("/{name}/acknowledge")
 async def acknowledge_alarm(name: str, req: AcknowledgeRequest):
     """Marks an active alarm as acknowledged by operator."""
