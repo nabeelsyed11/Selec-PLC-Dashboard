@@ -69,20 +69,19 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
   const currentTd4 = signals.mains_current_td4?.value ?? signals.mains_current_a?.value ?? 0;
   const pfTd5 = signals.power_factor_td5?.value ?? signals.power_factor?.value ?? 0;
 
-  // Modbus Transmission Delays (RTT ms per register)
-  const defaultDelay = fastLatency?.rtt_p50_ms ?? 0.0;
-  const vfdOutDelay = signals.scaled_out_vfd_qw0?.delay_ms ?? signals.vfd_output_frequency?.delay_ms ?? defaultDelay;
-  const iw0Delay = signals.plc_input_iw0?.delay_ms ?? defaultDelay;
-  const voltageDelay = signals.mains_voltage_td3?.delay_ms ?? signals.mains_voltage_v?.delay_ms ?? defaultDelay;
-  const currentDelay = signals.mains_current_td4?.delay_ms ?? signals.mains_current_a?.delay_ms ?? defaultDelay;
-  const pfDelay = signals.power_factor_td5?.delay_ms ?? signals.power_factor?.delay_ms ?? defaultDelay;
+  // One-shot Input Delays (captured at the moment input is pressed or register updated)
+  const vfdOutTriggerDelay = signals.scaled_out_vfd_qw0?.trigger_delay_ms ?? signals.vfd_output_frequency?.trigger_delay_ms ?? null;
+  const iw0TriggerDelay = signals.plc_input_iw0?.trigger_delay_ms ?? null;
+  const voltageTriggerDelay = signals.mains_voltage_td3?.trigger_delay_ms ?? signals.mains_voltage_v?.trigger_delay_ms ?? null;
+  const currentTriggerDelay = signals.mains_current_td4?.trigger_delay_ms ?? signals.mains_current_a?.trigger_delay_ms ?? null;
+  const pfTriggerDelay = signals.power_factor_td5?.trigger_delay_ms ?? signals.power_factor?.trigger_delay_ms ?? null;
 
-  // SCADA Cycle Telemetry with exact input trigger delays
+  // SCADA Cycle Telemetry with exact one-shot trigger delay when pressed
   const cyclesList = [
-    telemetry.cycles?.cycle_1 || { cycle_num: 1, name: "First Cycle", plc_tag: "MX2", modbus_coil: 514, active: cycle1, delay_ms: signals.cycle_1_mx2?.delay_ms ?? defaultDelay, trigger_delay_ms: 0.0, last_pressed_at: null },
-    telemetry.cycles?.cycle_2 || { cycle_num: 2, name: "Second Cycle", plc_tag: "MX3", modbus_coil: 515, active: cycle2, delay_ms: signals.cycle_2_mx3?.delay_ms ?? defaultDelay, trigger_delay_ms: 0.0, last_pressed_at: null },
-    telemetry.cycles?.cycle_3 || { cycle_num: 3, name: "Third Cycle", plc_tag: "MX4", modbus_coil: 516, active: cycle3, delay_ms: signals.cycle_3_mx4?.delay_ms ?? defaultDelay, trigger_delay_ms: 0.0, last_pressed_at: null },
-    telemetry.cycles?.cycle_4 || { cycle_num: 4, name: "Fourth Cycle", plc_tag: "MX5", modbus_coil: 517, active: cycle4, delay_ms: signals.cycle_4_mx5?.delay_ms ?? defaultDelay, trigger_delay_ms: 0.0, last_pressed_at: null },
+    telemetry.cycles?.cycle_1 || { cycle_num: 1, name: "First Cycle", plc_tag: "MX2", modbus_coil: 514, active: cycle1, trigger_delay_ms: null, last_pressed_at: null },
+    telemetry.cycles?.cycle_2 || { cycle_num: 2, name: "Second Cycle", plc_tag: "MX3", modbus_coil: 515, active: cycle2, trigger_delay_ms: null, last_pressed_at: null },
+    telemetry.cycles?.cycle_3 || { cycle_num: 3, name: "Third Cycle", plc_tag: "MX4", modbus_coil: 516, active: cycle3, trigger_delay_ms: null, last_pressed_at: null },
+    telemetry.cycles?.cycle_4 || { cycle_num: 4, name: "Fourth Cycle", plc_tag: "MX5", modbus_coil: 517, active: cycle4, trigger_delay_ms: null, last_pressed_at: null },
   ];
 
   return (
@@ -209,14 +208,13 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
                       fontSize: "11px",
                       padding: "2px 8px",
                       borderRadius: "12px",
-                      background: "rgba(6, 182, 212, 0.12)",
-                      border: "1px solid rgba(6, 182, 212, 0.3)",
-                      color: "var(--primary-cyan)",
+                      background: "rgba(255, 255, 255, 0.06)",
+                      border: "1px solid var(--border-subtle)",
+                      color: "var(--text-muted)",
                       fontWeight: 600,
                     }}
-                    title="Modbus Round-Trip Transmission Delay from PLC"
                   >
-                    ⚡ {c.delay_ms > 0 ? `${c.delay_ms.toFixed(1)} ms` : `${defaultDelay.toFixed(1)} ms`}
+                    {c.plc_tag}
                   </span>
                 </div>
                 <div style={{ fontSize: "18px", fontWeight: 800, color: "#fff", margin: "6px 0 2px" }}>
@@ -251,9 +249,13 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
                   >
                     {c.active ? "● ACTIVE" : "STANDBY"}
                   </span>
-                  {c.last_pressed_at && (
+                  {c.last_pressed_at ? (
                     <span className="mono" style={{ fontSize: "11px", color: "var(--text-muted)" }}>
                       Pressed: {c.last_pressed_at}
+                    </span>
+                  ) : (
+                    <span className="mono" style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                      Not Triggered
                     </span>
                   )}
                 </div>
@@ -269,9 +271,11 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
                     alignItems: "center",
                   }}
                 >
-                  <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Input Display Delay:</span>
+                  <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Input Delay:</span>
                   <span className="mono" style={{ fontSize: "14px", fontWeight: 700, color: "var(--primary-cyan)" }}>
-                    ⚡ {c.trigger_delay_ms > 0 ? `${c.trigger_delay_ms.toFixed(1)} ms` : `${(c.delay_ms || defaultDelay).toFixed(1)} ms`}
+                    {c.trigger_delay_ms != null && c.trigger_delay_ms > 0
+                      ? `⚡ ${c.trigger_delay_ms.toFixed(1)} ms`
+                      : "-- ms"}
                   </span>
                 </div>
               </div>
@@ -308,7 +312,7 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
           >
             <span style={{ color: "var(--text-muted)" }}>Drive Output (Real)</span>
             <span className="mono" style={{ color: "var(--primary-cyan)", fontWeight: 600 }}>
-              ⚡ Modbus Delay: {vfdOutDelay.toFixed(1)} ms
+              Input Delay: {vfdOutTriggerDelay != null && vfdOutTriggerDelay > 0 ? `⚡ ${vfdOutTriggerDelay.toFixed(1)} ms` : "-- ms"}
             </span>
           </div>
         </div>
@@ -339,7 +343,7 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
           >
             <span style={{ color: "var(--text-muted)" }}>Input Register (Int16)</span>
             <span className="mono" style={{ color: "#34d399", fontWeight: 600 }}>
-              ⚡ Modbus Delay: {iw0Delay.toFixed(1)} ms
+              Input Delay: {iw0TriggerDelay != null && iw0TriggerDelay > 0 ? `⚡ ${iw0TriggerDelay.toFixed(1)} ms` : "-- ms"}
             </span>
           </div>
         </div>
@@ -370,7 +374,7 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
           >
             <span style={{ color: "var(--text-muted)" }}>AC Line Potential</span>
             <span className="mono" style={{ color: "#f59e0b", fontWeight: 600 }}>
-              ⚡ Modbus Delay: {voltageDelay.toFixed(1)} ms
+              Input Delay: {voltageTriggerDelay != null && voltageTriggerDelay > 0 ? `⚡ ${voltageTriggerDelay.toFixed(1)} ms` : "-- ms"}
             </span>
           </div>
         </div>
@@ -401,7 +405,7 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
           >
             <span style={{ color: "var(--text-muted)" }}>Current Draw (Real)</span>
             <span className="mono" style={{ color: "#60a5fa", fontWeight: 600 }}>
-              ⚡ Modbus Delay: {currentDelay.toFixed(1)} ms
+              Input Delay: {currentTriggerDelay != null && currentTriggerDelay > 0 ? `⚡ ${currentTriggerDelay.toFixed(1)} ms` : "-- ms"}
             </span>
           </div>
         </div>
@@ -432,7 +436,7 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
           >
             <span style={{ color: "var(--text-muted)" }}>Efficiency Factor</span>
             <span className="mono" style={{ color: "#c084fc", fontWeight: 600 }}>
-              ⚡ Modbus Delay: {pfDelay.toFixed(1)} ms
+              Input Delay: {pfTriggerDelay != null && pfTriggerDelay > 0 ? `⚡ ${pfTriggerDelay.toFixed(1)} ms` : "-- ms"}
             </span>
           </div>
         </div>

@@ -11,6 +11,7 @@ export interface SignalData {
   t_response?: string;
   rtt_ms?: number;
   delay_ms?: number;
+  trigger_delay_ms?: number | null;
 }
 
 export interface CycleTelemetryItem {
@@ -19,8 +20,7 @@ export interface CycleTelemetryItem {
   plc_tag: string;
   modbus_coil: number;
   active: boolean;
-  delay_ms: number;
-  trigger_delay_ms: number;
+  trigger_delay_ms?: number | null;
   last_pressed_at?: string | null;
 }
 

@@ -61,8 +61,7 @@ class AppState:
                 "plc_tag": "MX2",
                 "modbus_coil": 514,
                 "active": False,
-                "delay_ms": 0.0,
-                "trigger_delay_ms": 0.0,
+                "trigger_delay_ms": None,
                 "last_pressed_at": None,
             },
             "cycle_2": {
@@ -71,8 +70,7 @@ class AppState:
                 "plc_tag": "MX3",
                 "modbus_coil": 515,
                 "active": False,
-                "delay_ms": 0.0,
-                "trigger_delay_ms": 0.0,
+                "trigger_delay_ms": None,
                 "last_pressed_at": None,
             },
             "cycle_3": {
@@ -81,8 +79,7 @@ class AppState:
                 "plc_tag": "MX4",
                 "modbus_coil": 516,
                 "active": False,
-                "delay_ms": 0.0,
-                "trigger_delay_ms": 0.0,
+                "trigger_delay_ms": None,
                 "last_pressed_at": None,
             },
             "cycle_4": {
@@ -91,8 +88,7 @@ class AppState:
                 "plc_tag": "MX5",
                 "modbus_coil": 517,
                 "active": False,
-                "delay_ms": 0.0,
-                "trigger_delay_ms": 0.0,
+                "trigger_delay_ms": None,
                 "last_pressed_at": None,
             },
         }
@@ -191,7 +187,20 @@ def on_modbus_measurements(measurements: Dict[str, Any]):
                 alarms_manager.clear_alarm("BELT_SLIP")
 
         # Update live snapshot
-        meas["delay_ms"] = round(float(meas.get("rtt_ms", 0.0)), 1)
+        prev_meas = app_state.signals_snapshot.get(name)
+        rtt = round(float(meas.get("rtt_ms", 0.0)), 1)
+        if rtt <= 0.0:
+            fast_g = app_state.modbus_client.diagnostics.groups.get("fast_group")
+            if fast_g and fast_g.last_rtt_ms > 0.0:
+                rtt = round(float(fast_g.last_rtt_ms), 1)
+
+        # Capture input response delay ONLY when value changes or when first received
+        if prev_meas is None or prev_meas.get("value") != meas.get("value"):
+            meas["trigger_delay_ms"] = rtt
+        else:
+            meas["trigger_delay_ms"] = prev_meas.get("trigger_delay_ms")
+
+        meas["delay_ms"] = rtt
         app_state.signals_snapshot[name] = meas
         # Buffer historical measurement (sample rate throttled to protect SD card)
         db_buffer.add_measurement(name, float(meas["value"]), meas["quality"])
@@ -203,7 +212,6 @@ def on_modbus_measurements(measurements: Dict[str, Any]):
         ("cycle_3", "cycle_3_mx4"),
         ("cycle_4", "cycle_4_mx5"),
     ]
-    now_mono = time.perf_counter()
     now_iso = datetime.now(timezone.utc).strftime("%H:%M:%S")
 
     for cycle_key, sig_name in cycle_mappings:
@@ -212,13 +220,16 @@ def on_modbus_measurements(measurements: Dict[str, Any]):
             c_data = app_state.cycles_telemetry[cycle_key]
             is_active = sig.get("value", 0) == 1
             rtt = round(float(sig.get("rtt_ms", 0.0)), 1)
-            c_data["delay_ms"] = rtt
+            if rtt <= 0.0:
+                fast_g = app_state.modbus_client.diagnostics.groups.get("fast_group")
+                if fast_g and fast_g.last_rtt_ms > 0.0:
+                    rtt = round(float(fast_g.last_rtt_ms), 1)
 
-            # Capture the exact time delay it took to reach and display on dashboard when pressed
+            # RISING EDGE: Captured ONLY at the exact moment the input is pressed / triggered
             if is_active and not c_data["active"]:
                 c_data["active"] = True
                 c_data["last_pressed_at"] = now_iso
-                c_data["trigger_delay_ms"] = rtt if rtt > 0.0 else round(float(sig.get("delay_ms", 0.0)), 1)
+                c_data["trigger_delay_ms"] = rtt
             elif not is_active and c_data["active"]:
                 c_data["active"] = False
 
