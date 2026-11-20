@@ -45,8 +45,9 @@ class Settings(BaseSettings):
 
     # Vibration Sensor Configuration
     VIBRATION_SENSOR_INTERFACE: Literal[
-        "MOCK", "I2C_ADXL345", "I2C_MPU6050", "SPI_ADXL355", "ADC_ADS1115"
-    ] = "MOCK"
+        "MOCK", "I2C_ADXL345", "I2C_MPU6050", "SPI_ADXL355", "ADC_ADS1115", "GPIO_DIGITAL"
+    ] = "GPIO_DIGITAL"
+    VIBRATION_GPIO_PIN: int = 17
     VIBRATION_SAMPLE_RATE_HZ: int = 1000
     VIBRATION_BUFFER_SIZE: int = 512
     VIBRATION_WARNING_RMS_G: float = 1.8

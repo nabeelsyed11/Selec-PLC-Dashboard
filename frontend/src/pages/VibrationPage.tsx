@@ -78,7 +78,7 @@ export const VibrationPage: React.FC<Props> = ({ telemetry }) => {
         <div>
           <h2 style={{ fontSize: "20px", fontWeight: 700 }}>Direct Vibration Acquisition & FFT Analysis</h2>
           <p style={{ color: "var(--text-muted)", fontSize: "13px" }}>
-            Acquired directly via Raspberry Pi 5 interface ({vibration.interface}) at {vibration.sample_rate_hz} Hz
+            Acquired directly via Raspberry Pi ({vibration.interface}) at {vibration.sample_rate_hz} Hz
           </p>
         </div>
 
@@ -98,11 +98,36 @@ export const VibrationPage: React.FC<Props> = ({ telemetry }) => {
             </span>
           ) : (
             <span className="badge-quality-valid" style={{ padding: "4px 10px", borderRadius: "6px", fontSize: "12px", fontWeight: 600 }}>
-              NORMAL BEARING BEHAVIOR
+              SENSOR ACTIVE (HEALTHY)
             </span>
           )}
         </div>
       </div>
+
+      {/* Hardware Connection Card */}
+      {vibration.interface !== "NO_HARDWARE_DETECTED" && (
+        <div
+          className="glass-panel"
+          style={{
+            padding: "12px 20px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "12px",
+            background: "rgba(6, 182, 212, 0.08)",
+            border: "1px solid rgba(6, 182, 212, 0.3)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13px" }}>
+            <Activity style={{ width: "16px", height: "16px", color: "var(--primary-cyan)" }} />
+            <span>Hardware Interface: <strong style={{ color: "var(--primary-cyan)" }}>{vibration.interface}</strong></span>
+          </div>
+          <div className="mono" style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+            Wiring: <strong>Pin 1 (3V3)</strong> | <strong>Pin 6 (GND)</strong> | <strong>Pin 11 (D0 / GPIO 17)</strong>
+          </div>
+        </div>
+      )}
 
       {/* Disconnection Warning */}
       {!telemetry.simulation_mode && vibration.interface === "NO_HARDWARE_DETECTED" && (
@@ -120,7 +145,7 @@ export const VibrationPage: React.FC<Props> = ({ telemetry }) => {
           <AlertTriangle style={{ width: "20px", height: "20px", color: "#f87171", flexShrink: 0 }} />
           <div style={{ fontSize: "13px" }}>
             <span style={{ fontWeight: 700, color: "#f87171" }}>Physical Mode Active:</span>{" "}
-            No physical I2C accelerometer (ADXL345/MPU6050) was detected on Raspberry Pi GPIO pins 2 & 3. Simulated waveforms are disabled so no false vibration is displayed. Connect a sensor to Pi GPIO or turn Simulation ON in <strong>PLC Settings</strong> to test.
+            No physical sensor detected on Raspberry Pi GPIO Pin 11 (GPIO 17) or I2C bus. Connect VCC to Pin 1 (3V3), GND to Pin 6, and D0 to Pin 11.
           </div>
         </div>
       )}
