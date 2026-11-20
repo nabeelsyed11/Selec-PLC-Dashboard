@@ -193,10 +193,10 @@ export function App() {
                   machineState === "RUNNING"
                     ? "#34d399"
                     : machineState === "COMM_LOST"
-                    ? "#ef4444"
-                    : machineState === "FAULTED"
-                    ? "#ef4444"
-                    : "var(--primary-cyan)",
+                      ? "#ef4444"
+                      : machineState === "FAULTED"
+                        ? "#ef4444"
+                        : "var(--primary-cyan)",
               }}
             />
             <span style={{ color: "var(--text-main)" }}>

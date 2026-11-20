@@ -107,8 +107,8 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
               {telemetry.simulation_mode
                 ? "SIMULATION (MOCK)"
                 : diagnostics.connected
-                ? `PLC ONLINE (${telemetry.plc_host || "192.168.1.50"}:${telemetry.plc_port || 502})`
-                : "PLC NOT DETECTED"}
+                  ? `PLC ONLINE (${telemetry.plc_host || "192.168.1.50"}:${telemetry.plc_port || 502})`
+                  : "PLC NOT DETECTED"}
             </div>
           </div>
           <div style={{ textAlign: "right" }}>

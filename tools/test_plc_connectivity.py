@@ -158,7 +158,7 @@ if __name__ == "__main__":
     else:
         print("  ✗ Cannot open TCP socket to PLC.")
         print("  Common causes:")
-        print("   1. Another program (simple_dashboard.py) is running in another window.")
+        print("   1. Another dashboard instance is already connected to the PLC in another window.")
         print("   2. PLC Ethernet is disconnected or on a different IP subnet.")
         print("   3. PLC is not in RUN mode.")
     print("=" * 65)
