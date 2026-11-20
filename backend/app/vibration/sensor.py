@@ -250,6 +250,10 @@ class VibrationAcquisitionEngine:
         sample_rate_hz: int = settings.VIBRATION_SAMPLE_RATE_HZ,
         buffer_size: int = settings.VIBRATION_BUFFER_SIZE,
     ):
+        # In physical hardware mode, if interface is MOCK or unset,
+        # automatically upgrade to GPIO_DIGITAL so physical GPIO 17 is sampled!
+        if not settings.SIMULATION_MODE and interface == "MOCK":
+            interface = "GPIO_DIGITAL"
         self.interface = interface
         self.sample_rate_hz = sample_rate_hz
         self.buffer_size = buffer_size

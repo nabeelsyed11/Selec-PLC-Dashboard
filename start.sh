@@ -66,7 +66,9 @@ if [ ! -f ".env" ]; then
         echo -e "      ${RED}[WARNING] Neither .env nor .env.example found! Using built-in defaults.${NC}"
     fi
 else
-    echo -e "      ${GREEN}[OK] .env configuration detected.${NC}"
+    # Auto-migrate any obsolete MOCK setting to GPIO_DIGITAL on physical hardware
+    sed -i 's/^VIBRATION_SENSOR_INTERFACE=MOCK/VIBRATION_SENSOR_INTERFACE=GPIO_DIGITAL/' .env 2>/dev/null || true
+    echo -e "      ${GREEN}[OK] .env configuration detected (Vibration: GPIO_DIGITAL on Pin 11).${NC}"
 fi
 
 # Ensure data directory exists for SQLite & CSV logs
