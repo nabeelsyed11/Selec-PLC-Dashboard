@@ -376,21 +376,54 @@ class SelecModbusClient:
                         "rtt_ms": rtt_ms,
                     }
             except Exception as e:
-                logger.debug(f"Holding register read failed for block starting {start_addr}: {e}")
+                logger.debug(f"Holding register block read failed for start {start_addr} (count {count}): {e}. Attempting individual signal fallback...")
                 for sig in block["signals"]:
-                    measurements[sig.name] = {
-                        "name": sig.name,
-                        "raw_value": 0,
-                        "value": 0.0,
-                        "unit": sig.engineering_unit,
-                        "quality": "DISCONNECTED" if not self.simulation_mode else "SIMULATED",
-                        "group": group_name,
-                        "t_request": t_req_utc,
-                        "t_response": None,
-                        "t_request_mono": t_req_mono,
-                        "t_response_mono": t_req_mono,
-                        "rtt_ms": 0.0,
-                    }
+                    t_sig_mono = time.perf_counter()
+                    t_sig_utc = datetime.now(timezone.utc).isoformat()
+                    try:
+                        sig_regs = await self._read_registers(sig.address, sig.register_count, function_code=sig.function_code)
+                        t_sig_resp_mono = time.perf_counter()
+                        t_sig_resp_utc = datetime.now(timezone.utc).isoformat()
+                        rtt_sig = (t_sig_resp_mono - t_sig_mono) * 1000.0
+                        successful_reads += 1
+                        scaled_val = decode_signal(
+                            registers=sig_regs,
+                            data_type=sig.data_type,
+                            index=0,
+                            byte_order=sig.byte_order,
+                            word_swap=sig.word_swap,
+                            scaling_factor=sig.scaling_factor,
+                            offset=sig.offset,
+                        )
+                        raw_val = sig_regs[0] if sig_regs else 0
+                        measurements[sig.name] = {
+                            "name": sig.name,
+                            "raw_value": raw_val,
+                            "value": scaled_val,
+                            "unit": sig.engineering_unit,
+                            "quality": "VALID" if not self.simulation_mode else "SIMULATED",
+                            "group": group_name,
+                            "t_request": t_sig_utc,
+                            "t_response": t_sig_resp_utc,
+                            "t_request_mono": t_sig_mono,
+                            "t_response_mono": t_sig_resp_mono,
+                            "rtt_ms": rtt_sig,
+                        }
+                    except Exception as sig_err:
+                        logger.debug(f"Individual read failed for {sig.name} at {sig.address}: {sig_err}")
+                        measurements[sig.name] = {
+                            "name": sig.name,
+                            "raw_value": 0,
+                            "value": 0.0,
+                            "unit": sig.engineering_unit,
+                            "quality": "DISCONNECTED" if not self.simulation_mode else "SIMULATED",
+                            "group": group_name,
+                            "t_request": t_sig_utc,
+                            "t_response": None,
+                            "t_request_mono": t_sig_mono,
+                            "t_response_mono": t_sig_mono,
+                            "rtt_ms": 0.0,
+                        }
 
         # Record diagnostics
         t_finish_mono = time.perf_counter()
@@ -595,12 +628,12 @@ class SelecModbusClient:
         regs[18] = int(state.grid_frequency_hz * 100.0) & 0xFFFF
         regs[20], regs[21] = float_to_regs(state.cumulative_kwh)
 
-        # SCADA QW0 / IW0 / Electrical registers
-        regs[767] = 50  # IW0 Integer
-        regs[767], regs[768] = float_to_regs(state.vfd_current_speed_hz)  # QW0 VFD Out (Hz)
-        regs[1541], regs[1542] = float_to_regs(state.mains_voltage_v)      # TD3 Voltage (V)
-        regs[1543], regs[1544] = float_to_regs(state.mains_current_a)      # TD4 Current (A)
-        regs[1545], regs[1546] = float_to_regs(state.power_factor)         # TD4/TD5 Power Factor (PF)
+        # SCADA QW0 / QW3 / Electrical registers
+        regs[767] = 120  # QW0 Process Input (int16)
+        regs[770] = int(state.vfd_current_speed_hz) & 0xFFFF  # QW3 VFD Out (int16)
+        regs[1541], regs[1542] = float_to_regs(state.mains_voltage_v)      # %ID3 Voltage (float32)
+        regs[1543], regs[1544] = float_to_regs(state.mains_current_a)      # ID4 Current (float32)
+        regs[1545], regs[1546] = float_to_regs(state.power_factor)         # ID5 Power Factor (float32)
 
         # VFD feedback
         regs[25] = int(state.vfd_current_speed_hz * 10.0) & 0xFFFF

@@ -63,18 +63,19 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
   const cycle2 = signals.cycle_2_mx3?.value === 1;
   const cycle3 = signals.cycle_3_mx4?.value === 1;
   const cycle4 = signals.cycle_4_mx5?.value === 1;
-  const vfdOutHz = signals.scaled_out_vfd_qw0?.value ?? signals.vfd_output_frequency?.value ?? 0;
-  const iw0Raw = signals.plc_input_iw0?.value ?? 0;
-  const voltageTd3 = signals.mains_voltage_td3?.value ?? signals.mains_voltage_v?.value ?? 0;
-  const currentTd4 = signals.mains_current_td4?.value ?? signals.mains_current_a?.value ?? 0;
-  const pfTd5 = signals.power_factor_td5?.value ?? signals.power_factor?.value ?? 0;
+  // SCADA Registers (with backwards-compatible aliases)
+  const vfdOutRaw = signals.scaled_out_vfd_qw3?.value ?? signals.scaled_out_vfd_qw0?.value ?? signals.vfd_output_frequency?.value ?? 0;
+  const processInputVal = signals.process_input_qw0?.value ?? signals.plc_input_iw0?.value ?? 0;
+  const voltageVal = signals.mains_voltage_id3?.value ?? signals.mains_voltage_td3?.value ?? signals.mains_voltage_v?.value ?? 0;
+  const currentVal = signals.load_current_id4?.value ?? signals.mains_current_td4?.value ?? signals.mains_current_a?.value ?? 0;
+  const pfVal = signals.power_factor_id5?.value ?? signals.power_factor_td5?.value ?? signals.power_factor?.value ?? 0;
 
   // One-shot Input Delays (captured at the moment input is pressed or register updated)
-  const vfdOutTriggerDelay = signals.scaled_out_vfd_qw0?.trigger_delay_ms ?? signals.vfd_output_frequency?.trigger_delay_ms ?? null;
-  const iw0TriggerDelay = signals.plc_input_iw0?.trigger_delay_ms ?? null;
-  const voltageTriggerDelay = signals.mains_voltage_td3?.trigger_delay_ms ?? signals.mains_voltage_v?.trigger_delay_ms ?? null;
-  const currentTriggerDelay = signals.mains_current_td4?.trigger_delay_ms ?? signals.mains_current_a?.trigger_delay_ms ?? null;
-  const pfTriggerDelay = signals.power_factor_td5?.trigger_delay_ms ?? signals.power_factor?.trigger_delay_ms ?? null;
+  const vfdOutTriggerDelay = signals.scaled_out_vfd_qw3?.trigger_delay_ms ?? signals.scaled_out_vfd_qw0?.trigger_delay_ms ?? signals.vfd_output_frequency?.trigger_delay_ms ?? null;
+  const processInputTriggerDelay = signals.process_input_qw0?.trigger_delay_ms ?? signals.plc_input_iw0?.trigger_delay_ms ?? null;
+  const voltageTriggerDelay = signals.mains_voltage_id3?.trigger_delay_ms ?? signals.mains_voltage_td3?.trigger_delay_ms ?? signals.mains_voltage_v?.trigger_delay_ms ?? null;
+  const currentTriggerDelay = signals.load_current_id4?.trigger_delay_ms ?? signals.mains_current_td4?.trigger_delay_ms ?? signals.mains_current_a?.trigger_delay_ms ?? null;
+  const pfTriggerDelay = signals.power_factor_id5?.trigger_delay_ms ?? signals.power_factor_td5?.trigger_delay_ms ?? signals.power_factor?.trigger_delay_ms ?? null;
 
   // SCADA Cycle Telemetry with exact one-shot trigger delay when pressed
   const cyclesList = [
@@ -286,17 +287,17 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
 
       {/* SCADA Drive & Electrical Telemetry Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" }}>
-        {/* VFD Scaled Out Frequency (QW0) */}
+        {/* VFD Scaled Out Frequency (QW3, Modbus 30771) */}
         <div className="glass-panel" style={{ padding: "20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
               <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "var(--primary-cyan)" }}>
                 Scaled Out / VFD Out
               </span>
-              <span className="mono" style={{ fontSize: "11px" }}>QW0 (30768)</span>
+              <span className="mono" style={{ fontSize: "11px" }}>QW3 (30771)</span>
             </div>
             <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
-              {vfdOutHz.toFixed(1)} <span style={{ fontSize: "18px", color: "var(--primary-cyan)" }}>Hz</span>
+              {Math.round(vfdOutRaw)} <span style={{ fontSize: "18px", color: "var(--primary-cyan)" }}>raw</span>
             </div>
           </div>
           <div
@@ -310,24 +311,24 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
               fontSize: "11px",
             }}
           >
-            <span style={{ color: "var(--text-muted)" }}>Drive Output (Real)</span>
+            <span style={{ color: "var(--text-muted)" }}>PLC Address: QW3 (Int)</span>
             <span className="mono" style={{ color: "var(--primary-cyan)", fontWeight: 600 }}>
               Input Delay: {vfdOutTriggerDelay != null && vfdOutTriggerDelay > 0 ? `⚡ ${vfdOutTriggerDelay.toFixed(1)} ms` : "-- ms"}
             </span>
           </div>
         </div>
 
-        {/* Process Input Word (IW0) */}
+        {/* Process Input (QW0, Modbus 30768) */}
         <div className="glass-panel" style={{ padding: "20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
               <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#34d399" }}>
-                Process Input (IW0)
+                Process Input
               </span>
-              <span className="mono" style={{ fontSize: "11px" }}>IW0 (40768)</span>
+              <span className="mono" style={{ fontSize: "11px" }}>QW0 (30768)</span>
             </div>
             <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
-              {iw0Raw} <span style={{ fontSize: "18px", color: "#34d399" }}>raw</span>
+              {Math.round(processInputVal)} <span style={{ fontSize: "18px", color: "#34d399" }}>raw</span>
             </div>
           </div>
           <div
@@ -341,24 +342,24 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
               fontSize: "11px",
             }}
           >
-            <span style={{ color: "var(--text-muted)" }}>Input Register (Int16)</span>
+            <span style={{ color: "var(--text-muted)" }}>PLC Address: QW0 (Int)</span>
             <span className="mono" style={{ color: "#34d399", fontWeight: 600 }}>
-              Input Delay: {iw0TriggerDelay != null && iw0TriggerDelay > 0 ? `⚡ ${iw0TriggerDelay.toFixed(1)} ms` : "-- ms"}
+              Input Delay: {processInputTriggerDelay != null && processInputTriggerDelay > 0 ? `⚡ ${processInputTriggerDelay.toFixed(1)} ms` : "-- ms"}
             </span>
           </div>
         </div>
 
-        {/* Mains Voltage (TD3) */}
+        {/* Mains Voltage (%ID3, Modbus 41542) */}
         <div className="glass-panel" style={{ padding: "20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
               <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#f59e0b" }}>
                 Mains Voltage
               </span>
-              <span className="mono" style={{ fontSize: "11px" }}>TD3 (41542)</span>
+              <span className="mono" style={{ fontSize: "11px" }}>%ID3 (41542)</span>
             </div>
             <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
-              {voltageTd3.toFixed(1)} <span style={{ fontSize: "18px", color: "#f59e0b" }}>V</span>
+              {voltageVal.toFixed(1)} <span style={{ fontSize: "18px", color: "#f59e0b" }}>V</span>
             </div>
           </div>
           <div
@@ -372,24 +373,24 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
               fontSize: "11px",
             }}
           >
-            <span style={{ color: "var(--text-muted)" }}>AC Line Potential</span>
+            <span style={{ color: "var(--text-muted)" }}>PLC Address: %ID3 (Real)</span>
             <span className="mono" style={{ color: "#f59e0b", fontWeight: 600 }}>
               Input Delay: {voltageTriggerDelay != null && voltageTriggerDelay > 0 ? `⚡ ${voltageTriggerDelay.toFixed(1)} ms` : "-- ms"}
             </span>
           </div>
         </div>
 
-        {/* Load Current (TD4) */}
+        {/* Load Current (ID4, Modbus 41544) */}
         <div className="glass-panel" style={{ padding: "20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
               <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#60a5fa" }}>
                 Load Current
               </span>
-              <span className="mono" style={{ fontSize: "11px" }}>TD4 (41544)</span>
+              <span className="mono" style={{ fontSize: "11px" }}>ID4 (41544)</span>
             </div>
             <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
-              {currentTd4.toFixed(2)} <span style={{ fontSize: "18px", color: "#60a5fa" }}>A</span>
+              {currentVal.toFixed(2)} <span style={{ fontSize: "18px", color: "#60a5fa" }}>A</span>
             </div>
           </div>
           <div
@@ -403,24 +404,24 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
               fontSize: "11px",
             }}
           >
-            <span style={{ color: "var(--text-muted)" }}>Current Draw (Real)</span>
+            <span style={{ color: "var(--text-muted)" }}>PLC Address: ID4 (Real)</span>
             <span className="mono" style={{ color: "#60a5fa", fontWeight: 600 }}>
               Input Delay: {currentTriggerDelay != null && currentTriggerDelay > 0 ? `⚡ ${currentTriggerDelay.toFixed(1)} ms` : "-- ms"}
             </span>
           </div>
         </div>
 
-        {/* Power Factor (TD4/TD5) */}
+        {/* Power Factor (ID5, Modbus 41546) */}
         <div className="glass-panel" style={{ padding: "20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
               <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#c084fc" }}>
                 Power Factor
               </span>
-              <span className="mono" style={{ fontSize: "11px" }}>TD4/5 (41546)</span>
+              <span className="mono" style={{ fontSize: "11px" }}>ID5 (41546)</span>
             </div>
             <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
-              {pfTd5.toFixed(2)} <span style={{ fontSize: "18px", color: "#c084fc" }}>PF</span>
+              {pfVal.toFixed(2)} <span style={{ fontSize: "18px", color: "#c084fc" }}>PF</span>
             </div>
           </div>
           <div
@@ -434,7 +435,7 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
               fontSize: "11px",
             }}
           >
-            <span style={{ color: "var(--text-muted)" }}>Efficiency Factor</span>
+            <span style={{ color: "var(--text-muted)" }}>PLC Address: ID5 (Real)</span>
             <span className="mono" style={{ color: "#c084fc", fontWeight: 600 }}>
               Input Delay: {pfTriggerDelay != null && pfTriggerDelay > 0 ? `⚡ ${pfTriggerDelay.toFixed(1)} ms` : "-- ms"}
             </span>

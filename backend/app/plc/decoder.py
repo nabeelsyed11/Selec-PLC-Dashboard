@@ -3,6 +3,7 @@ Industrial Modbus Register Decoder and Encoder
 Supports 16-bit and 32-bit integers, IEEE-754 floating point,
 and word/byte endianness transformations (Big Endian, Little Endian, Word Swap).
 """
+import math
 import struct
 from typing import List, Union, Optional
 
@@ -74,6 +75,8 @@ def decode_32bit_float(
     raw_bytes = struct.pack(">HH", r1, r2)
     fmt = ">f" if byte_order.lower() == "big" else "<f"
     val = struct.unpack(fmt, raw_bytes)[0]
+    if math.isnan(val) or math.isinf(val):
+        return 0.0
     return float(val)
 
 

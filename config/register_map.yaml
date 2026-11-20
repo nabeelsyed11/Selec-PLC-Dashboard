@@ -163,11 +163,12 @@ discrete_signals:
 # Analog & Numerical Registers (Holding Registers FC 03)
 # ------------------------------------------------------------------------------
 numerical_signals:
-  # 0. PLC Input Address IW0 (Modbus 40768)
-  - name: "plc_input_iw0"
-    description: "Selec PLC Input Register IW0 (Modbus 40768)"
+  # 1. Process Input (QW0, Modbus 30768)
+  - name: "process_input_qw0"
+    description: "Process Input (QW0, Modbus 30768)"
     address: 767
-    function_code: 3
+    register_count: 1
+    function_code: 4
     data_type: "int16"
     byte_order: "big"
     scaling_factor: 1.0         # Integer format (1 count = 1 integer)
@@ -175,23 +176,22 @@ numerical_signals:
     engineering_unit: "raw"
     group: "fast_group"
 
-  # Scaled Out / VFD Out Frequency (QW0, Modbus 30768)
-  - name: "scaled_out_vfd_qw0"
-    description: "Scaled Out / VFD Out Frequency (QW0, Modbus 30768)"
-    address: 767
-    register_count: 2
+  # 2. Scaled Out / VFD Out (QW3, Modbus 30771)
+  - name: "scaled_out_vfd_qw3"
+    description: "Scaled Out / VFD Out Frequency (QW3, Modbus 30771)"
+    address: 770
+    register_count: 1
     function_code: 4
-    data_type: "float32"
+    data_type: "int16"
     byte_order: "big"
-    word_swap: false
     scaling_factor: 1.0
     offset: 0.0
     engineering_unit: "Hz"
     group: "fast_group"
 
-  # Electrical Power Telemetry (TD3, TD4, TD4/5)
-  - name: "mains_voltage_td3"
-    description: "Mains Voltage (TD3, Modbus 41542)"
+  # 3. Mains Voltage (%ID3, Modbus 41542)
+  - name: "mains_voltage_id3"
+    description: "Mains Voltage (%ID3, Modbus 41542)"
     address: 1541
     register_count: 2
     function_code: 3
@@ -203,8 +203,9 @@ numerical_signals:
     engineering_unit: "V"
     group: "medium_group"
 
-  - name: "mains_current_td4"
-    description: "Load Current (TD4, Modbus 41544)"
+  # 4. Load Current (ID4, Modbus 41544)
+  - name: "load_current_id4"
+    description: "Load Current (ID4, Modbus 41544)"
     address: 1543
     register_count: 2
     function_code: 3
@@ -216,8 +217,9 @@ numerical_signals:
     engineering_unit: "A"
     group: "medium_group"
 
-  - name: "power_factor_td5"
-    description: "Power Factor (TD4/TD5, Modbus 41546)"
+  # 5. Power Factor (ID5, Modbus 41546)
+  - name: "power_factor_id5"
+    description: "Power Factor (ID5, Modbus 41546)"
     address: 1545
     register_count: 2
     function_code: 3

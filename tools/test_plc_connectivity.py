@@ -92,27 +92,100 @@ async def test_modbus_registers(host: str, port: int, unit_id: int = 1):
             kwargs["device_id"] = unit_id
         return method(*args, **kwargs)
 
-    # 1. Test IW0 (Holding Register 767 or Input Register 767)
-    print("\n  -- Checking Process Input IW0 (Modbus 40768) --")
-    for fn, name in [(client.read_holding_registers, "Holding Reg 767 (FC 03)"),
-                     (client.read_input_registers, "Input Reg 767 (FC 04)"),
-                     (client.read_holding_registers, 768),
-                     (client.read_input_registers, 768)]:
-        addr = 767 if isinstance(name, str) else name
-        label = name if isinstance(name, str) else f"Reg {addr}"
+    # 1. Test QW0 (Process Input - Modbus 30768)
+    print("\n  -- [1/5] Checking Process Input QW0 (Modbus 30768, Int) --")
+    for fn, name in [(client.read_input_registers, "Input Reg 767 (FC 04)"),
+                     (client.read_holding_registers, "Holding Reg 767 (FC 03)"),
+                     (client.read_input_registers, "Input Reg 768 (FC 04)"),
+                     (client.read_holding_registers, "Holding Reg 768 (FC 03)")]:
+        addr = 768 if "768" in name else 767
         try:
             resp = await call(fn, address=addr, count=1)
             if not resp.isError() and hasattr(resp, "registers"):
                 val = resp.registers[0]
-                print(f"    ✓ {label}: VALUE = {val} (raw)")
+                print(f"    ✓ {name}: VALUE = {val} (raw)")
                 break
             else:
-                print(f"    ✗ {label}: {resp}")
+                print(f"    ✗ {name}: {resp}")
         except Exception as e:
-            print(f"    ✗ {label}: {e}")
+            print(f"    ✗ {name}: {e}")
 
-    # 2. Test Coils MX2..MX5 (Coils 514..517)
-    print("\n  -- Checking SCADA Cycles MX2-MX5 (Coils 514-517, FC 01) --")
+    # 2. Test QW3 (Scaled Out / VFD Out - Modbus 30771)
+    print("\n  -- [2/5] Checking Scaled Out / VFD Out QW3 (Modbus 30771, Int) --")
+    for fn, name in [(client.read_input_registers, "Input Reg 770 (FC 04)"),
+                     (client.read_holding_registers, "Holding Reg 770 (FC 03)"),
+                     (client.read_input_registers, "Input Reg 771 (FC 04)"),
+                     (client.read_holding_registers, "Holding Reg 771 (FC 03)")]:
+        addr = 771 if "771" in name else 770
+        try:
+            resp = await call(fn, address=addr, count=1)
+            if not resp.isError() and hasattr(resp, "registers"):
+                val = resp.registers[0]
+                print(f"    ✓ {name}: VALUE = {val} (raw integer)")
+                break
+            else:
+                print(f"    ✗ {name}: {resp}")
+        except Exception as e:
+            print(f"    ✗ {name}: {e}")
+
+    import struct
+
+    def decode_float(r1, r2):
+        try:
+            return struct.unpack(">f", struct.pack(">HH", r1, r2))[0]
+        except Exception:
+            return None
+
+    # 3. Test %ID3 (Mains Voltage - Modbus 41542)
+    print("\n  -- [3/5] Checking Mains Voltage %ID3 (Modbus 41542, Real) --")
+    for addr in [1541, 1542]:
+        try:
+            resp = await call(client.read_holding_registers, address=addr, count=2)
+            if not resp.isError() and hasattr(resp, "registers"):
+                r = resp.registers[:2]
+                f_val = decode_float(r[0], r[1])
+                f_str = f"{f_val:.2f} V" if f_val is not None else "Invalid Float"
+                print(f"    ✓ Holding Regs at {addr}: Raw={r}, Float={f_str}")
+                break
+            else:
+                print(f"    ✗ Holding Regs at {addr}: {resp}")
+        except Exception as e:
+            print(f"    ✗ Holding Regs at {addr}: {e}")
+
+    # 4. Test ID4 (Load Current - Modbus 41544)
+    print("\n  -- [4/5] Checking Load Current ID4 (Modbus 41544, Real) --")
+    for addr in [1543, 1544]:
+        try:
+            resp = await call(client.read_holding_registers, address=addr, count=2)
+            if not resp.isError() and hasattr(resp, "registers"):
+                r = resp.registers[:2]
+                f_val = decode_float(r[0], r[1])
+                f_str = f"{f_val:.2f} A" if f_val is not None else "Invalid Float"
+                print(f"    ✓ Holding Regs at {addr}: Raw={r}, Float={f_str}")
+                break
+            else:
+                print(f"    ✗ Holding Regs at {addr}: {resp}")
+        except Exception as e:
+            print(f"    ✗ Holding Regs at {addr}: {e}")
+
+    # 5. Test ID5 (Power Factor - Modbus 41546)
+    print("\n  -- [5/5] Checking Power Factor ID5 (Modbus 41546, Real) --")
+    for addr in [1545, 1546]:
+        try:
+            resp = await call(client.read_holding_registers, address=addr, count=2)
+            if not resp.isError() and hasattr(resp, "registers"):
+                r = resp.registers[:2]
+                f_val = decode_float(r[0], r[1])
+                f_str = f"{f_val:.2f} PF" if f_val is not None else "Invalid Float"
+                print(f"    ✓ Holding Regs at {addr}: Raw={r}, Float={f_str}")
+                break
+            else:
+                print(f"    ✗ Holding Regs at {addr}: {resp}")
+        except Exception as e:
+            print(f"    ✗ Holding Regs at {addr}: {e}")
+
+    # 6. Test Coils MX2..MX5 (Coils 514..517)
+    print("\n  -- [6/6] Checking SCADA Cycles MX2-MX5 (Coils 514-517, FC 01) --")
     for addr in [514, 513]:
         try:
             resp = await call(client.read_coils, address=addr, count=4)
@@ -124,19 +197,6 @@ async def test_modbus_registers(host: str, port: int, unit_id: int = 1):
                 print(f"    ✗ Coils starting at {addr}: {resp}")
         except Exception as e:
             print(f"    ✗ Coils starting at {addr}: {e}")
-
-    # 3. Test Voltage TD3 (Holding Register 1541)
-    print("\n  -- Checking Mains Voltage TD3 (Holding Reg 1541, FC 03) --")
-    for addr in [1541, 1542]:
-        try:
-            resp = await call(client.read_holding_registers, address=addr, count=2)
-            if not resp.isError() and hasattr(resp, "registers"):
-                print(f"    ✓ Holding Regs starting at {addr}: {resp.registers[:2]}")
-                break
-            else:
-                print(f"    ✗ Holding Regs starting at {addr}: {resp}")
-        except Exception as e:
-            print(f"    ✗ Holding Regs starting at {addr}: {e}")
 
     client.close()
 

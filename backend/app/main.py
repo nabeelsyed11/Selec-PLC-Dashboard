@@ -250,7 +250,8 @@ def on_modbus_measurements(measurements: Dict[str, Any]):
     cycle_active = c1 or c2 or c3 or c4
 
     vfd_hz = (
-        app_state.signals_snapshot.get("scaled_out_vfd_qw0", {}).get("value")
+        app_state.signals_snapshot.get("scaled_out_vfd_qw3", {}).get("value")
+        or app_state.signals_snapshot.get("scaled_out_vfd_qw0", {}).get("value")
         or app_state.signals_snapshot.get("vfd_output_frequency", {}).get("value", 0.0)
         or 0.0
     )

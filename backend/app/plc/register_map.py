@@ -71,7 +71,7 @@ def load_register_map(yaml_path: str) -> RegisterMapConfig:
     return RegisterMapConfig(**raw_data)
 
 
-def group_contiguous_registers(signals: List[NumericalSignal], max_gap: int = 2) -> List[Dict[str, Any]]:
+def group_contiguous_registers(signals: List[NumericalSignal], max_gap: int = 0) -> List[Dict[str, Any]]:
     """
     Groups individual numerical signals into contiguous blocks to minimize
     the number of Modbus TCP requests per polling cycle.
