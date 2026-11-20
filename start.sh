@@ -100,11 +100,16 @@ if [ ! -d "venv" ]; then
     echo -e "      ${GREEN}[OK] Fresh Linux venv created.${NC}"
 fi
 
+# Enable system site packages so system apt packages (like python3-gpiozero, gpiod) are directly accessible in venv
+if [ -f "venv/pyvenv.cfg" ]; then
+    sed -i 's/include-system-site-packages = false/include-system-site-packages = true/' venv/pyvenv.cfg 2>/dev/null || true
+fi
+
 # 4. Install / Verify Python Dependencies
 echo -e "${BLUE}[4/5] Checking backend dependencies...${NC}"
 NEED_INSTALL=false
 
-if ! ./venv/bin/python -c "import fastapi, uvicorn, pymodbus, pydantic_settings, aiosqlite, sqlalchemy, yaml, numpy, scipy, psutil" >/dev/null 2>&1; then
+if ! ./venv/bin/python -c "import fastapi, uvicorn, pymodbus, pydantic_settings, aiosqlite, sqlalchemy, yaml, numpy, scipy, psutil, gpiozero" >/dev/null 2>&1; then
     NEED_INSTALL=true
 fi
 

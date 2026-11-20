@@ -71,16 +71,35 @@ if not read_fn:
     except Exception:
         pass
 
-# 4. Try pinctrl / raspi-gpio CLI fallback
+# 4. Try pinctrl (Raspberry Pi 5 / Bookworm / Trixie native tool)
 if not read_fn:
     try:
-        res = subprocess.run(["pinctrl", "get", str(PIN)], capture_mode=False, capture_output=True, text=True)
+        res = subprocess.run(["pinctrl", "get", str(PIN)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if res.returncode == 0:
-            def cli_read():
-                out = subprocess.check_output(["pinctrl", "get", str(PIN)], text=True)
-                return 1 if "hi" in out else 0
-            read_fn = cli_read
-            backend_name = "pinctrl CLI"
+            def pinctrl_read():
+                try:
+                    out = subprocess.check_output(["pinctrl", "get", str(PIN)], text=True)
+                    return 1 if "hi" in out.lower() else 0
+                except Exception:
+                    return 0
+            read_fn = pinctrl_read
+            backend_name = "pinctrl CLI (Pi native)"
+    except Exception:
+        pass
+
+# 5. Try raspi-gpio (Raspberry Pi 4 native tool)
+if not read_fn:
+    try:
+        res = subprocess.run(["raspi-gpio", "get", str(PIN)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if res.returncode == 0:
+            def raspi_gpio_read():
+                try:
+                    out = subprocess.check_output(["raspi-gpio", "get", str(PIN)], text=True)
+                    return 1 if "level=1" in out.lower() or "hi" in out.lower() else 0
+                except Exception:
+                    return 0
+            read_fn = raspi_gpio_read
+            backend_name = "raspi-gpio CLI (Pi native)"
     except Exception:
         pass
 

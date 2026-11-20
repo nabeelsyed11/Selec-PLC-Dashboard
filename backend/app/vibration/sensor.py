@@ -193,6 +193,42 @@ class HardwareDigitalGpioDriver(BaseVibrationDriver):
         except Exception as e:
             logger.debug(f"sysfs not available: {e}")
 
+        # 5. Try pinctrl CLI (Raspberry Pi 5 / Bookworm / Trixie native tool)
+        try:
+            import subprocess
+            res = subprocess.run(["pinctrl", "get", str(self.pin)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if res.returncode == 0:
+                def pinctrl_read():
+                    try:
+                        out = subprocess.check_output(["pinctrl", "get", str(self.pin)], text=True)
+                        return 1 if "hi" in out.lower() else 0
+                    except Exception:
+                        return 0
+                self._read_fn = pinctrl_read
+                self.backend_name = f"GPIO{self.pin} (pinctrl)"
+                logger.info(f"Initialized physical digital vibration sensor on GPIO {self.pin} via pinctrl CLI.")
+                return True
+        except Exception as e:
+            logger.debug(f"pinctrl CLI not available: {e}")
+
+        # 6. Try raspi-gpio CLI (Raspberry Pi 4 native tool)
+        try:
+            import subprocess
+            res = subprocess.run(["raspi-gpio", "get", str(self.pin)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if res.returncode == 0:
+                def raspi_gpio_read():
+                    try:
+                        out = subprocess.check_output(["raspi-gpio", "get", str(self.pin)], text=True)
+                        return 1 if "level=1" in out.lower() or "hi" in out.lower() else 0
+                    except Exception:
+                        return 0
+                self._read_fn = raspi_gpio_read
+                self.backend_name = f"GPIO{self.pin} (raspi-gpio)"
+                logger.info(f"Initialized physical digital vibration sensor on GPIO {self.pin} via raspi-gpio CLI.")
+                return True
+        except Exception as e:
+            logger.debug(f"raspi-gpio CLI not available: {e}")
+
         logger.info(f"Using standard pulse listener for GPIO {self.pin}.")
         self.backend_name = f"GPIO{self.pin} (Digital Pulse Listener)"
         return True
