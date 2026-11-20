@@ -628,12 +628,20 @@ class SelecModbusClient:
         regs[18] = int(state.grid_frequency_hz * 100.0) & 0xFFFF
         regs[20], regs[21] = float_to_regs(state.cumulative_kwh)
 
-        # SCADA QW0 / QW3 / Electrical registers
-        regs[767] = 120  # QW0 Process Input (int16)
-        regs[770] = int(state.vfd_current_speed_hz) & 0xFFFF  # QW3 VFD Out (int16)
-        regs[1541], regs[1542] = float_to_regs(state.mains_voltage_v)      # %ID3 Voltage (float32)
-        regs[1543], regs[1544] = float_to_regs(state.mains_current_a)      # ID4 Current (float32)
-        regs[1545], regs[1546] = float_to_regs(state.power_factor)         # ID5 Power Factor (float32)
+        # SCADA QW0 / QW3 / Electrical registers (simulated for both 0-based & 1-based)
+        regs[767] = 7500 # QW0 (1-based: 30768 -> 767)
+        regs[768] = 7500 # QW0 (0-based: 30768 -> 768)
+        regs[770] = int(state.vfd_current_speed_hz) & 0xFFFF  # QW3 (1-based: 30771 -> 770)
+        regs[771] = int(state.vfd_current_speed_hz) & 0xFFFF  # QW3 (0-based: 30771 -> 771)
+        # Word-swapped float helper (CDAB)
+        def float_to_regs_swapped(f_val: float) -> Tuple[int, int]:
+            r_hi, r_lo = float_to_regs(f_val)
+            return r_lo, r_hi
+
+        regs[1541], regs[1542] = float_to_regs_swapped(state.mains_voltage_v)
+        regs[1542], regs[1543] = float_to_regs_swapped(state.mains_voltage_v)      # %ID3 Voltage (float32)
+        regs[1544], regs[1545] = float_to_regs_swapped(state.mains_current_a)      # ID4 Current (float32)
+        regs[1546], regs[1547] = float_to_regs_swapped(state.power_factor)         # ID5 Power Factor (float32)
 
         # VFD feedback
         regs[25] = int(state.vfd_current_speed_hz * 10.0) & 0xFFFF

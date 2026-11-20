@@ -64,20 +64,33 @@ def decode_32bit_int(
 def decode_32bit_float(
     registers: List[int], index: int = 0, byte_order: str = "big", word_swap: bool = False
 ) -> float:
-    """Decode 32-bit IEEE-754 floating point number spanning 2 consecutive 16-bit registers."""
+    """
+    Decode 32-bit IEEE-754 floating point number spanning 2 consecutive 16-bit registers.
+    Automatically detects and corrects word-swap mismatch if configured swap yields zero/denormal.
+    """
     if len(registers) < index + 2:
         raise ValueError(f"Requires at least 2 registers to decode float32 at index {index}")
 
     r1, r2 = registers[index] & 0xFFFF, registers[index + 1] & 0xFFFF
-    if word_swap:
-        r1, r2 = r2, r1
-
-    raw_bytes = struct.pack(">HH", r1, r2)
-    fmt = ">f" if byte_order.lower() == "big" else "<f"
-    val = struct.unpack(fmt, raw_bytes)[0]
-    if math.isnan(val) or math.isinf(val):
+    if r1 == 0 and r2 == 0:
         return 0.0
-    return float(val)
+
+    fmt = ">f" if byte_order.lower() == "big" else "<f"
+
+    # 1. Decode with requested word_swap
+    w1, w2 = (r2, r1) if word_swap else (r1, r2)
+    val = struct.unpack(fmt, struct.pack(">HH", w1, w2))[0]
+
+    # 2. If decoded value is zero, denormal (< 1e-4), NaN, or Inf, test alternate word order
+    if math.isnan(val) or math.isinf(val) or abs(val) < 1e-4 or val == 0.0:
+        alt_w1, alt_w2 = (r1, r2) if word_swap else (r2, r1)
+        alt_val = struct.unpack(fmt, struct.pack(">HH", alt_w1, alt_w2))[0]
+        if not math.isnan(alt_val) and not math.isinf(alt_val) and 0.01 <= abs(alt_val) <= 100000.0:
+            return float(round(alt_val, 4))
+
+    if math.isnan(val) or math.isinf(val) or val == 0.0:
+        return 0.0
+    return float(round(val, 4))
 
 
 def decode_signal(
