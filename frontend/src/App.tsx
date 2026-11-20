@@ -194,13 +194,21 @@ export function App() {
                     ? "#34d399"
                     : machineState === "COMM_LOST"
                       ? "#ef4444"
-                      : machineState === "FAULTED"
-                        ? "#ef4444"
-                        : "var(--primary-cyan)",
+                      : "var(--primary-cyan)",
+                boxShadow:
+                  machineState === "RUNNING"
+                    ? "0 0 8px #34d399"
+                    : machineState === "COMM_LOST"
+                      ? "0 0 8px #ef4444"
+                      : "0 0 8px var(--primary-cyan)",
               }}
             />
             <span style={{ color: "var(--text-main)" }}>
-              {machineState === "COMM_LOST" ? "COMM LOST (PLC OFFLINE)" : machineState}
+              {machineState === "COMM_LOST"
+                ? "COMM LOST (PLC OFFLINE)"
+                : machineState === "RUNNING"
+                  ? "RUNNING"
+                  : "READY / ONLINE"}
             </span>
           </div>
 

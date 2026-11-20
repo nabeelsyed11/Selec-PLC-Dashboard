@@ -34,15 +34,20 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
 
   const { machine_state, signals, latency, alarms, vibration, telemetry: pi_sys, diagnostics } = telemetry;
 
-  const stateColors: Record<string, string> = {
-    RUNNING: "var(--status-running)",
-    IDLE: "var(--status-idle)",
-    STOPPED: "var(--status-stopped)",
-    FAULTED: "var(--status-faulted)",
-    COMM_LOST: "var(--status-commlost)",
-  };
+  const displayState =
+    machine_state === "COMM_LOST"
+      ? "COMM LOST (PLC OFFLINE)"
+      : machine_state === "RUNNING"
+        ? "RUNNING"
+        : "READY / ONLINE";
 
-  const currentColor = stateColors[machine_state] || "var(--status-idle)";
+  const currentColor =
+    machine_state === "COMM_LOST"
+      ? "#ef4444"
+      : machine_state === "RUNNING"
+        ? "#34d399"
+        : "var(--primary-cyan)";
+
   const fastLatency = latency.groups?.fast_group;
   const loadCellKg = signals.load_cell_weight?.value ?? 0;
   const motorTempC = signals.motor_temperature?.value ?? 0;
@@ -63,6 +68,22 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
   const voltageTd3 = signals.mains_voltage_td3?.value ?? signals.mains_voltage_v?.value ?? 0;
   const currentTd4 = signals.mains_current_td4?.value ?? signals.mains_current_a?.value ?? 0;
   const pfTd5 = signals.power_factor_td5?.value ?? signals.power_factor?.value ?? 0;
+
+  // Modbus Transmission Delays (RTT ms per register)
+  const defaultDelay = fastLatency?.rtt_p50_ms ?? 0.0;
+  const vfdOutDelay = signals.scaled_out_vfd_qw0?.delay_ms ?? signals.vfd_output_frequency?.delay_ms ?? defaultDelay;
+  const iw0Delay = signals.plc_input_iw0?.delay_ms ?? defaultDelay;
+  const voltageDelay = signals.mains_voltage_td3?.delay_ms ?? signals.mains_voltage_v?.delay_ms ?? defaultDelay;
+  const currentDelay = signals.mains_current_td4?.delay_ms ?? signals.mains_current_a?.delay_ms ?? defaultDelay;
+  const pfDelay = signals.power_factor_td5?.delay_ms ?? signals.power_factor?.delay_ms ?? defaultDelay;
+
+  // SCADA Cycle Telemetry with live execution timers and transmission delays
+  const cyclesList = [
+    telemetry.cycles?.cycle_1 || { cycle_num: 1, name: "First Cycle", plc_tag: "MX2", modbus_coil: 514, active: cycle1, delay_ms: signals.cycle_1_mx2?.delay_ms ?? defaultDelay, duration_sec: 0.0, last_duration_sec: 0.0, started_at: null },
+    telemetry.cycles?.cycle_2 || { cycle_num: 2, name: "Second Cycle", plc_tag: "MX3", modbus_coil: 515, active: cycle2, delay_ms: signals.cycle_2_mx3?.delay_ms ?? defaultDelay, duration_sec: 0.0, last_duration_sec: 0.0, started_at: null },
+    telemetry.cycles?.cycle_3 || { cycle_num: 3, name: "Third Cycle", plc_tag: "MX4", modbus_coil: 516, active: cycle3, delay_ms: signals.cycle_3_mx4?.delay_ms ?? defaultDelay, duration_sec: 0.0, last_duration_sec: 0.0, started_at: null },
+    telemetry.cycles?.cycle_4 || { cycle_num: 4, name: "Fourth Cycle", plc_tag: "MX5", modbus_coil: 517, active: cycle4, delay_ms: signals.cycle_4_mx5?.delay_ms ?? defaultDelay, duration_sec: 0.0, last_duration_sec: 0.0, started_at: null },
+  ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
@@ -95,7 +116,7 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
               Operating State
             </div>
             <div style={{ fontSize: "24px", fontWeight: 700, letterSpacing: "0.5px", color: currentColor }}>
-              {machine_state}
+              {displayState}
             </div>
           </div>
         </div>
@@ -160,47 +181,92 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px" }}>
-          {[
-            { num: 1, name: "First Cycle", plc: "MX2", mb: 514, active: cycle1 },
-            { num: 2, name: "Second Cycle", plc: "MX3", mb: 515, active: cycle2 },
-            { num: 3, name: "Third Cycle", plc: "MX4", mb: 516, active: cycle3 },
-            { num: 4, name: "Fourth Cycle", plc: "MX5", mb: 517, active: cycle4 },
-          ].map((c) => (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "14px" }}>
+          {cyclesList.map((c) => (
             <div
-              key={c.num}
+              key={c.cycle_num}
               style={{
                 background: c.active ? "rgba(16, 185, 129, 0.15)" : "rgba(0, 0, 0, 0.3)",
                 border: c.active ? "1px solid rgba(16, 185, 129, 0.6)" : "1px solid var(--border-subtle)",
                 boxShadow: c.active ? "0 0 15px rgba(16, 185, 129, 0.25)" : "none",
                 borderRadius: "10px",
                 padding: "16px",
-                textAlign: "center",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                gap: "12px",
                 transition: "all 0.2s ease",
               }}
             >
-              <div style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>
-                {c.name}
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>
+                    {c.name}
+                  </span>
+                  <span
+                    className="mono"
+                    style={{
+                      fontSize: "11px",
+                      padding: "2px 8px",
+                      borderRadius: "12px",
+                      background: "rgba(6, 182, 212, 0.12)",
+                      border: "1px solid rgba(6, 182, 212, 0.3)",
+                      color: "var(--primary-cyan)",
+                      fontWeight: 600,
+                    }}
+                    title="Modbus Round-Trip Transmission Delay from PLC"
+                  >
+                    ⚡ {c.delay_ms > 0 ? `${c.delay_ms.toFixed(1)} ms` : `${defaultDelay.toFixed(1)} ms`}
+                  </span>
+                </div>
+                <div style={{ fontSize: "18px", fontWeight: 800, color: "#fff", margin: "6px 0 2px" }}>
+                  Cycle {c.cycle_num}
+                </div>
+                <div className="mono" style={{ fontSize: "11px", color: "#9ca3af" }}>
+                  PLC: <strong style={{ color: "var(--primary-cyan)" }}>{c.plc_tag}</strong> | Coil: {c.modbus_coil}
+                </div>
               </div>
-              <div style={{ fontSize: "16px", fontWeight: 800, color: "#fff", margin: "4px 0" }}>
-                Cycle {c.num}
-              </div>
-              <div className="mono" style={{ fontSize: "11px", color: "#9ca3af" }}>
-                PLC: <strong>{c.plc}</strong> | Modbus: {c.mb}
-              </div>
+
+              {/* Live Active Execution Timer & Status */}
               <div
                 style={{
-                  display: "inline-block",
-                  marginTop: "10px",
-                  padding: "3px 12px",
-                  borderRadius: "20px",
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  backgroundColor: c.active ? "#10b981" : "#1f2937",
-                  color: c.active ? "#000" : "#6b7280",
+                  background: "rgba(0,0,0,0.4)",
+                  borderRadius: "8px",
+                  padding: "10px 12px",
+                  border: c.active ? "1px solid rgba(16, 185, 129, 0.4)" : "1px solid var(--border-subtle)",
                 }}
               >
-                {c.active ? "ACTIVE" : "STANDBY"}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      padding: "2px 10px",
+                      borderRadius: "12px",
+                      fontSize: "11px",
+                      fontWeight: 800,
+                      backgroundColor: c.active ? "#10b981" : "#1f2937",
+                      color: c.active ? "#000" : "#9ca3af",
+                      boxShadow: c.active ? "0 0 10px rgba(16, 185, 129, 0.5)" : "none",
+                    }}
+                  >
+                    {c.active ? "● ACTIVE" : "STANDBY"}
+                  </span>
+                  {c.started_at && c.active && (
+                    <span className="mono" style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                      Started: {c.started_at}
+                    </span>
+                  )}
+                </div>
+
+                <div className="mono" style={{ fontSize: "13px", fontWeight: 700, color: c.active ? "#34d399" : "#9ca3af" }}>
+                  {c.active ? (
+                    <span>⏱ Active Time: <strong style={{ color: "#fff" }}>{c.duration_sec.toFixed(1)}s</strong></span>
+                  ) : c.last_duration_sec > 0 ? (
+                    <span style={{ color: "var(--text-muted)" }}>⏱ Last Run: <strong style={{ color: "#e5e7eb" }}>{c.last_duration_sec.toFixed(1)}s</strong></span>
+                  ) : (
+                    <span style={{ color: "var(--text-muted)" }}>⏱ Standby (0.0s)</span>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -210,82 +276,157 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
       {/* SCADA Drive & Electrical Telemetry Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" }}>
         {/* VFD Scaled Out Frequency (QW0) */}
-        <div className="glass-panel" style={{ padding: "20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
-            <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "var(--primary-cyan)" }}>
-              Scaled Out / VFD Out
+        <div className="glass-panel" style={{ padding: "20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
+              <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "var(--primary-cyan)" }}>
+                Scaled Out / VFD Out
+              </span>
+              <span className="mono" style={{ fontSize: "11px" }}>QW0 (30768)</span>
+            </div>
+            <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
+              {vfdOutHz.toFixed(1)} <span style={{ fontSize: "18px", color: "var(--primary-cyan)" }}>Hz</span>
+            </div>
+          </div>
+          <div
+            style={{
+              marginTop: "12px",
+              paddingTop: "8px",
+              borderTop: "1px solid var(--border-subtle)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: "11px",
+            }}
+          >
+            <span style={{ color: "var(--text-muted)" }}>Drive Output (Real)</span>
+            <span className="mono" style={{ color: "var(--primary-cyan)", fontWeight: 600 }}>
+              ⚡ Modbus Delay: {vfdOutDelay.toFixed(1)} ms
             </span>
-            <span className="mono" style={{ fontSize: "11px" }}>QW0 (30768)</span>
-          </div>
-          <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
-            {vfdOutHz.toFixed(1)} <span style={{ fontSize: "18px", color: "var(--primary-cyan)" }}>Hz</span>
-          </div>
-          <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
-            PLC Scaled Drive Output (Real float32)
           </div>
         </div>
 
         {/* Process Input Word (IW0) */}
-        <div className="glass-panel" style={{ padding: "20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
-            <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#34d399" }}>
-              Process Input (IW0)
+        <div className="glass-panel" style={{ padding: "20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
+              <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#34d399" }}>
+                Process Input (IW0)
+              </span>
+              <span className="mono" style={{ fontSize: "11px" }}>IW0 (40768)</span>
+            </div>
+            <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
+              {iw0Raw} <span style={{ fontSize: "18px", color: "#34d399" }}>raw</span>
+            </div>
+          </div>
+          <div
+            style={{
+              marginTop: "12px",
+              paddingTop: "8px",
+              borderTop: "1px solid var(--border-subtle)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: "11px",
+            }}
+          >
+            <span style={{ color: "var(--text-muted)" }}>Input Register (Int16)</span>
+            <span className="mono" style={{ color: "#34d399", fontWeight: 600 }}>
+              ⚡ Modbus Delay: {iw0Delay.toFixed(1)} ms
             </span>
-            <span className="mono" style={{ fontSize: "11px" }}>IW0 (40768)</span>
-          </div>
-          <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
-            {iw0Raw} <span style={{ fontSize: "18px", color: "#34d399" }}>raw</span>
-          </div>
-          <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
-            PLC Input Register (Integer int16)
           </div>
         </div>
 
         {/* Mains Voltage (TD3) */}
-        <div className="glass-panel" style={{ padding: "20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
-            <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#f59e0b" }}>
-              Mains Voltage
+        <div className="glass-panel" style={{ padding: "20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
+              <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#f59e0b" }}>
+                Mains Voltage
+              </span>
+              <span className="mono" style={{ fontSize: "11px" }}>TD3 (41542)</span>
+            </div>
+            <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
+              {voltageTd3.toFixed(1)} <span style={{ fontSize: "18px", color: "#f59e0b" }}>V</span>
+            </div>
+          </div>
+          <div
+            style={{
+              marginTop: "12px",
+              paddingTop: "8px",
+              borderTop: "1px solid var(--border-subtle)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: "11px",
+            }}
+          >
+            <span style={{ color: "var(--text-muted)" }}>AC Line Potential</span>
+            <span className="mono" style={{ color: "#f59e0b", fontWeight: 600 }}>
+              ⚡ Modbus Delay: {voltageDelay.toFixed(1)} ms
             </span>
-            <span className="mono" style={{ fontSize: "11px" }}>TD3 (41542)</span>
-          </div>
-          <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
-            {voltageTd3.toFixed(1)} <span style={{ fontSize: "18px", color: "#f59e0b" }}>V</span>
-          </div>
-          <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
-            AC Line Potential (Real float32)
           </div>
         </div>
 
         {/* Load Current (TD4) */}
-        <div className="glass-panel" style={{ padding: "20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
-            <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#60a5fa" }}>
-              Load Current
+        <div className="glass-panel" style={{ padding: "20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
+              <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#60a5fa" }}>
+                Load Current
+              </span>
+              <span className="mono" style={{ fontSize: "11px" }}>TD4 (41544)</span>
+            </div>
+            <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
+              {currentTd4.toFixed(2)} <span style={{ fontSize: "18px", color: "#60a5fa" }}>A</span>
+            </div>
+          </div>
+          <div
+            style={{
+              marginTop: "12px",
+              paddingTop: "8px",
+              borderTop: "1px solid var(--border-subtle)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: "11px",
+            }}
+          >
+            <span style={{ color: "var(--text-muted)" }}>Current Draw (Real)</span>
+            <span className="mono" style={{ color: "#60a5fa", fontWeight: 600 }}>
+              ⚡ Modbus Delay: {currentDelay.toFixed(1)} ms
             </span>
-            <span className="mono" style={{ fontSize: "11px" }}>TD4 (41544)</span>
-          </div>
-          <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
-            {currentTd4.toFixed(2)} <span style={{ fontSize: "18px", color: "#60a5fa" }}>A</span>
-          </div>
-          <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
-            Mains Current Draw (Real float32)
           </div>
         </div>
 
         {/* Power Factor (TD4/TD5) */}
-        <div className="glass-panel" style={{ padding: "20px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
-            <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#c084fc" }}>
-              Power Factor
+        <div className="glass-panel" style={{ padding: "20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)" }}>
+              <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", color: "#c084fc" }}>
+                Power Factor
+              </span>
+              <span className="mono" style={{ fontSize: "11px" }}>TD4/5 (41546)</span>
+            </div>
+            <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
+              {pfTd5.toFixed(2)} <span style={{ fontSize: "18px", color: "#c084fc" }}>PF</span>
+            </div>
+          </div>
+          <div
+            style={{
+              marginTop: "12px",
+              paddingTop: "8px",
+              borderTop: "1px solid var(--border-subtle)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: "11px",
+            }}
+          >
+            <span style={{ color: "var(--text-muted)" }}>Efficiency Factor</span>
+            <span className="mono" style={{ color: "#c084fc", fontWeight: 600 }}>
+              ⚡ Modbus Delay: {pfDelay.toFixed(1)} ms
             </span>
-            <span className="mono" style={{ fontSize: "11px" }}>TD4/5 (41546)</span>
-          </div>
-          <div className="mono" style={{ fontSize: "36px", fontWeight: 700, marginTop: "6px", color: "#fff" }}>
-            {pfTd5.toFixed(2)} <span style={{ fontSize: "18px", color: "#c084fc" }}>PF</span>
-          </div>
-          <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
-            Efficiency Factor (Real float32)
           </div>
         </div>
       </div>

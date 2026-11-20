@@ -35,16 +35,13 @@ class MachineStateManager:
         Calculates aggregate machine status:
         - COMM_LOST: Modbus connection broken or stale data
         - RUNNING: Any process cycle active (MX2..MX5), or VFD frequency > 0, or drive running
-        - IDLE: Powered and ready, Modbus link healthy
-        - FAULTED: Explicit VFD hardware fault trip
+        - READY: Powered and ready in standby, Modbus link healthy
         """
         if not comm_connected or is_stale:
             return "COMM_LOST"
-        if vfd_fault:
-            return "FAULTED"
         if cycle_active or (vfd_running and belt_speed_mps > 0.05) or (vfd_hz > 0.1) or vfd_running:
             return "RUNNING"
-        return "IDLE"
+        return "READY"
 
     def get_system_telemetry(self) -> Dict[str, Any]:
         """Edge Raspberry Pi 5 resource telemetry."""

@@ -49,10 +49,61 @@ class AppState:
         self.modbus_client = SelecModbusClient(self.reg_map)
         self.sensor_processor = SensorDataProcessor()
         self.signals_snapshot: Dict[str, Any] = {}
-        self.current_machine_state: str = "IDLE" if settings.SIMULATION_MODE else "COMM_LOST"
+        self.current_machine_state: str = "READY" if settings.SIMULATION_MODE else "COMM_LOST"
         self.simulated_server: Optional[SimulatedModbusServer] = None
         self.broadcast_task: Optional[asyncio.Task] = None
         self.physics_task: Optional[asyncio.Task] = None
+
+        self.cycles_telemetry: Dict[str, Dict[str, Any]] = {
+            "cycle_1": {
+                "cycle_num": 1,
+                "name": "First Cycle",
+                "plc_tag": "MX2",
+                "modbus_coil": 514,
+                "active": False,
+                "delay_ms": 0.0,
+                "duration_sec": 0.0,
+                "last_duration_sec": 0.0,
+                "started_at": None,
+                "start_mono": None,
+            },
+            "cycle_2": {
+                "cycle_num": 2,
+                "name": "Second Cycle",
+                "plc_tag": "MX3",
+                "modbus_coil": 515,
+                "active": False,
+                "delay_ms": 0.0,
+                "duration_sec": 0.0,
+                "last_duration_sec": 0.0,
+                "started_at": None,
+                "start_mono": None,
+            },
+            "cycle_3": {
+                "cycle_num": 3,
+                "name": "Third Cycle",
+                "plc_tag": "MX4",
+                "modbus_coil": 516,
+                "active": False,
+                "delay_ms": 0.0,
+                "duration_sec": 0.0,
+                "last_duration_sec": 0.0,
+                "started_at": None,
+                "start_mono": None,
+            },
+            "cycle_4": {
+                "cycle_num": 4,
+                "name": "Fourth Cycle",
+                "plc_tag": "MX5",
+                "modbus_coil": 517,
+                "active": False,
+                "delay_ms": 0.0,
+                "duration_sec": 0.0,
+                "last_duration_sec": 0.0,
+                "started_at": None,
+                "start_mono": None,
+            },
+        }
 
         # Pre-populate initial signals with honest quality flags
         init_quality = "SIMULATED" if settings.SIMULATION_MODE else "DISCONNECTED"
@@ -148,9 +199,42 @@ def on_modbus_measurements(measurements: Dict[str, Any]):
                 alarms_manager.clear_alarm("BELT_SLIP")
 
         # Update live snapshot
+        meas["delay_ms"] = round(float(meas.get("rtt_ms", 0.0)), 1)
         app_state.signals_snapshot[name] = meas
         # Buffer historical measurement (sample rate throttled to protect SD card)
         db_buffer.add_measurement(name, float(meas["value"]), meas["quality"])
+
+    # Update SCADA Process Cycles tracking (MX2..MX5)
+    cycle_mappings = [
+        ("cycle_1", "cycle_1_mx2"),
+        ("cycle_2", "cycle_2_mx3"),
+        ("cycle_3", "cycle_3_mx4"),
+        ("cycle_4", "cycle_4_mx5"),
+    ]
+    now_mono = time.perf_counter()
+    now_iso = datetime.now(timezone.utc).strftime("%H:%M:%S")
+
+    for cycle_key, sig_name in cycle_mappings:
+        sig = app_state.signals_snapshot.get(sig_name)
+        if sig and cycle_key in app_state.cycles_telemetry:
+            c_data = app_state.cycles_telemetry[cycle_key]
+            is_active = sig.get("value", 0) == 1
+            rtt = round(float(sig.get("rtt_ms", 0.0)), 1)
+            c_data["delay_ms"] = rtt
+
+            if is_active and not c_data["active"]:
+                c_data["active"] = True
+                c_data["started_at"] = now_iso
+                c_data["start_mono"] = now_mono
+                c_data["duration_sec"] = 0.0
+            elif not is_active and c_data["active"]:
+                c_data["active"] = False
+                if c_data.get("start_mono"):
+                    c_data["last_duration_sec"] = round(now_mono - c_data["start_mono"], 1)
+                    c_data["duration_sec"] = c_data["last_duration_sec"]
+                c_data["start_mono"] = None
+            elif is_active and c_data.get("start_mono"):
+                c_data["duration_sec"] = round(now_mono - c_data["start_mono"], 1)
 
     # Update overall machine state
     e_stop = app_state.signals_snapshot.get("emergency_stop_ok", {}).get("value", 1) == 1
@@ -196,6 +280,12 @@ async def websocket_broadcast_loop():
                 is_sim = app_state.modbus_client.simulation_mode
                 is_conn = app_state.modbus_client.diagnostics.connected
 
+                # Tick active cycle execution timers smoothly at 10 Hz
+                now_mono = time.perf_counter()
+                for c_data in app_state.cycles_telemetry.values():
+                    if c_data.get("active") and c_data.get("start_mono"):
+                        c_data["duration_sec"] = round(now_mono - c_data["start_mono"], 1)
+
                 # Strict state management when physical mode is active
                 if not is_sim:
                     if not is_conn:
@@ -219,6 +309,7 @@ async def websocket_broadcast_loop():
                     "plc_host": app_state.modbus_client.host,
                     "plc_port": app_state.modbus_client.port,
                     "signals": app_state.signals_snapshot,
+                    "cycles": app_state.cycles_telemetry,
                     "latency": latency_subsystem.get_all_group_stats() if (is_sim or is_conn) else {
                         "groups": {
                             "fast_group": {"count": 0, "rtt_mean_ms": 0.0, "rtt_p50_ms": 0.0, "rtt_p95_ms": 0.0, "rtt_p99_ms": 0.0, "rtt_min_ms": 0.0, "rtt_max_ms": 0.0, "ingest_mean_ms": 0.0, "ingest_p95_ms": 0.0, "publish_mean_ms": 0.0, "update_interval_mean_ms": 0.0, "jitter_ms": 0.0},

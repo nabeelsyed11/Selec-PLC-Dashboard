@@ -10,6 +10,19 @@ export interface SignalData {
   t_request?: string;
   t_response?: string;
   rtt_ms?: number;
+  delay_ms?: number;
+}
+
+export interface CycleTelemetryItem {
+  cycle_num: number;
+  name: string;
+  plc_tag: string;
+  modbus_coil: number;
+  active: boolean;
+  delay_ms: number;
+  duration_sec: number;
+  last_duration_sec: number;
+  started_at?: string | null;
 }
 
 export interface GroupLatencyStats {
@@ -97,12 +110,13 @@ export interface DiagnosticsPayload {
 export interface TelemetryMessage {
   type: string;
   timestamp: string;
-  machine_state: "RUNNING" | "STOPPED" | "IDLE" | "FAULTED" | "COMM_LOST";
+  machine_state: "RUNNING" | "STOPPED" | "IDLE" | "FAULTED" | "COMM_LOST" | "READY";
   simulation_mode?: boolean;
   plc_connected?: boolean;
   plc_host?: string;
   plc_port?: number;
   signals: Record<string, SignalData>;
+  cycles?: Record<string, CycleTelemetryItem>;
   latency: LatencyPayload;
   alarms: AlarmItem[];
   vibration: VibrationPayload;
