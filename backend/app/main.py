@@ -62,10 +62,8 @@ class AppState:
                 "modbus_coil": 514,
                 "active": False,
                 "delay_ms": 0.0,
-                "duration_sec": 0.0,
-                "last_duration_sec": 0.0,
-                "started_at": None,
-                "start_mono": None,
+                "trigger_delay_ms": 0.0,
+                "last_pressed_at": None,
             },
             "cycle_2": {
                 "cycle_num": 2,
@@ -74,10 +72,8 @@ class AppState:
                 "modbus_coil": 515,
                 "active": False,
                 "delay_ms": 0.0,
-                "duration_sec": 0.0,
-                "last_duration_sec": 0.0,
-                "started_at": None,
-                "start_mono": None,
+                "trigger_delay_ms": 0.0,
+                "last_pressed_at": None,
             },
             "cycle_3": {
                 "cycle_num": 3,
@@ -86,10 +82,8 @@ class AppState:
                 "modbus_coil": 516,
                 "active": False,
                 "delay_ms": 0.0,
-                "duration_sec": 0.0,
-                "last_duration_sec": 0.0,
-                "started_at": None,
-                "start_mono": None,
+                "trigger_delay_ms": 0.0,
+                "last_pressed_at": None,
             },
             "cycle_4": {
                 "cycle_num": 4,
@@ -98,10 +92,8 @@ class AppState:
                 "modbus_coil": 517,
                 "active": False,
                 "delay_ms": 0.0,
-                "duration_sec": 0.0,
-                "last_duration_sec": 0.0,
-                "started_at": None,
-                "start_mono": None,
+                "trigger_delay_ms": 0.0,
+                "last_pressed_at": None,
             },
         }
 
@@ -222,19 +214,13 @@ def on_modbus_measurements(measurements: Dict[str, Any]):
             rtt = round(float(sig.get("rtt_ms", 0.0)), 1)
             c_data["delay_ms"] = rtt
 
+            # Capture the exact time delay it took to reach and display on dashboard when pressed
             if is_active and not c_data["active"]:
                 c_data["active"] = True
-                c_data["started_at"] = now_iso
-                c_data["start_mono"] = now_mono
-                c_data["duration_sec"] = 0.0
+                c_data["last_pressed_at"] = now_iso
+                c_data["trigger_delay_ms"] = rtt if rtt > 0.0 else round(float(sig.get("delay_ms", 0.0)), 1)
             elif not is_active and c_data["active"]:
                 c_data["active"] = False
-                if c_data.get("start_mono"):
-                    c_data["last_duration_sec"] = round(now_mono - c_data["start_mono"], 1)
-                    c_data["duration_sec"] = c_data["last_duration_sec"]
-                c_data["start_mono"] = None
-            elif is_active and c_data.get("start_mono"):
-                c_data["duration_sec"] = round(now_mono - c_data["start_mono"], 1)
 
     # Update overall machine state
     e_stop = app_state.signals_snapshot.get("emergency_stop_ok", {}).get("value", 1) == 1
@@ -279,12 +265,6 @@ async def websocket_broadcast_loop():
             if ws_manager.active_connections:
                 is_sim = app_state.modbus_client.simulation_mode
                 is_conn = app_state.modbus_client.diagnostics.connected
-
-                # Tick active cycle execution timers smoothly at 10 Hz
-                now_mono = time.perf_counter()
-                for c_data in app_state.cycles_telemetry.values():
-                    if c_data.get("active") and c_data.get("start_mono"):
-                        c_data["duration_sec"] = round(now_mono - c_data["start_mono"], 1)
 
                 # Strict state management when physical mode is active
                 if not is_sim:

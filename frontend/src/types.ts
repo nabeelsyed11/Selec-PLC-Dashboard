@@ -20,9 +20,8 @@ export interface CycleTelemetryItem {
   modbus_coil: number;
   active: boolean;
   delay_ms: number;
-  duration_sec: number;
-  last_duration_sec: number;
-  started_at?: string | null;
+  trigger_delay_ms: number;
+  last_pressed_at?: string | null;
 }
 
 export interface GroupLatencyStats {

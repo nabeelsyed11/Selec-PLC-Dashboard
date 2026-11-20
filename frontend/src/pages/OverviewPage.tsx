@@ -77,12 +77,12 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
   const currentDelay = signals.mains_current_td4?.delay_ms ?? signals.mains_current_a?.delay_ms ?? defaultDelay;
   const pfDelay = signals.power_factor_td5?.delay_ms ?? signals.power_factor?.delay_ms ?? defaultDelay;
 
-  // SCADA Cycle Telemetry with live execution timers and transmission delays
+  // SCADA Cycle Telemetry with exact input trigger delays
   const cyclesList = [
-    telemetry.cycles?.cycle_1 || { cycle_num: 1, name: "First Cycle", plc_tag: "MX2", modbus_coil: 514, active: cycle1, delay_ms: signals.cycle_1_mx2?.delay_ms ?? defaultDelay, duration_sec: 0.0, last_duration_sec: 0.0, started_at: null },
-    telemetry.cycles?.cycle_2 || { cycle_num: 2, name: "Second Cycle", plc_tag: "MX3", modbus_coil: 515, active: cycle2, delay_ms: signals.cycle_2_mx3?.delay_ms ?? defaultDelay, duration_sec: 0.0, last_duration_sec: 0.0, started_at: null },
-    telemetry.cycles?.cycle_3 || { cycle_num: 3, name: "Third Cycle", plc_tag: "MX4", modbus_coil: 516, active: cycle3, delay_ms: signals.cycle_3_mx4?.delay_ms ?? defaultDelay, duration_sec: 0.0, last_duration_sec: 0.0, started_at: null },
-    telemetry.cycles?.cycle_4 || { cycle_num: 4, name: "Fourth Cycle", plc_tag: "MX5", modbus_coil: 517, active: cycle4, delay_ms: signals.cycle_4_mx5?.delay_ms ?? defaultDelay, duration_sec: 0.0, last_duration_sec: 0.0, started_at: null },
+    telemetry.cycles?.cycle_1 || { cycle_num: 1, name: "First Cycle", plc_tag: "MX2", modbus_coil: 514, active: cycle1, delay_ms: signals.cycle_1_mx2?.delay_ms ?? defaultDelay, trigger_delay_ms: 0.0, last_pressed_at: null },
+    telemetry.cycles?.cycle_2 || { cycle_num: 2, name: "Second Cycle", plc_tag: "MX3", modbus_coil: 515, active: cycle2, delay_ms: signals.cycle_2_mx3?.delay_ms ?? defaultDelay, trigger_delay_ms: 0.0, last_pressed_at: null },
+    telemetry.cycles?.cycle_3 || { cycle_num: 3, name: "Third Cycle", plc_tag: "MX4", modbus_coil: 516, active: cycle3, delay_ms: signals.cycle_3_mx4?.delay_ms ?? defaultDelay, trigger_delay_ms: 0.0, last_pressed_at: null },
+    telemetry.cycles?.cycle_4 || { cycle_num: 4, name: "Fourth Cycle", plc_tag: "MX5", modbus_coil: 517, active: cycle4, delay_ms: signals.cycle_4_mx5?.delay_ms ?? defaultDelay, trigger_delay_ms: 0.0, last_pressed_at: null },
   ];
 
   return (
@@ -227,7 +227,7 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
                 </div>
               </div>
 
-              {/* Live Active Execution Timer & Status */}
+              {/* Input Display Delay & Status */}
               <div
                 style={{
                   background: "rgba(0,0,0,0.4)",
@@ -236,7 +236,7 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
                   border: c.active ? "1px solid rgba(16, 185, 129, 0.4)" : "1px solid var(--border-subtle)",
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                   <span
                     style={{
                       display: "inline-block",
@@ -251,21 +251,28 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
                   >
                     {c.active ? "● ACTIVE" : "STANDBY"}
                   </span>
-                  {c.started_at && c.active && (
+                  {c.last_pressed_at && (
                     <span className="mono" style={{ fontSize: "11px", color: "var(--text-muted)" }}>
-                      Started: {c.started_at}
+                      Pressed: {c.last_pressed_at}
                     </span>
                   )}
                 </div>
 
-                <div className="mono" style={{ fontSize: "13px", fontWeight: 700, color: c.active ? "#34d399" : "#9ca3af" }}>
-                  {c.active ? (
-                    <span>⏱ Active Time: <strong style={{ color: "#fff" }}>{c.duration_sec.toFixed(1)}s</strong></span>
-                  ) : c.last_duration_sec > 0 ? (
-                    <span style={{ color: "var(--text-muted)" }}>⏱ Last Run: <strong style={{ color: "#e5e7eb" }}>{c.last_duration_sec.toFixed(1)}s</strong></span>
-                  ) : (
-                    <span style={{ color: "var(--text-muted)" }}>⏱ Standby (0.0s)</span>
-                  )}
+                <div
+                  style={{
+                    background: "rgba(6, 182, 212, 0.08)",
+                    border: "1px solid rgba(6, 182, 212, 0.25)",
+                    borderRadius: "6px",
+                    padding: "8px 10px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Input Display Delay:</span>
+                  <span className="mono" style={{ fontSize: "14px", fontWeight: 700, color: "var(--primary-cyan)" }}>
+                    ⚡ {c.trigger_delay_ms > 0 ? `${c.trigger_delay_ms.toFixed(1)} ms` : `${(c.delay_ms || defaultDelay).toFixed(1)} ms`}
+                  </span>
                 </div>
               </div>
             </div>
