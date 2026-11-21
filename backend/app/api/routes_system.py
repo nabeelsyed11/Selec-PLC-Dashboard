@@ -31,6 +31,7 @@ class PLCConfigSchema(BaseModel):
     plc_unit_id: int = Field(1, ge=1, le=255, description="Modbus Slave / Unit ID (default 1)")
     simulation_mode: bool = Field(False, description="Enable virtual mock PLC simulation")
     plc_timeout_seconds: float = Field(1.5, ge=0.1, le=30.0, description="Socket response timeout in seconds")
+    connected: Optional[bool] = Field(None, description="Connection status indicator from UI")
 
     @field_validator("plc_host")
     @classmethod
@@ -290,13 +291,17 @@ async def update_plc_config(cfg: PLCConfigSchema):
         stop_physics_task()
 
     # 4. Reconfigure active Modbus client
-    connected = await app_state.modbus_client.reconfigure(
-        host=settings.PLC_HOST,
-        port=settings.PLC_PORT,
-        unit_id=settings.PLC_UNIT_ID,
-        simulation_mode=settings.SIMULATION_MODE,
-        timeout=settings.PLC_TIMEOUT_SECONDS,
-    )
+    try:
+        connected = await app_state.modbus_client.reconfigure(
+            host=settings.PLC_HOST,
+            port=settings.PLC_PORT,
+            unit_id=settings.PLC_UNIT_ID,
+            simulation_mode=settings.SIMULATION_MODE,
+            timeout=settings.PLC_TIMEOUT_SECONDS,
+        )
+    except Exception as e:
+        logger.error(f"Error reconfiguring Modbus client: {e}")
+        connected = False
 
     return {
         "success": True,

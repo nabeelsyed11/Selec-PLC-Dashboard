@@ -38,6 +38,21 @@ def test_api_latency_stats():
     assert "fast_group" in data["groups"]
 
 
+def test_latency_record_has_data_age():
+    """Ensure LatencyRecord has data_age_ms property and does not raise AttributeError."""
+    rec = latency_subsystem.record_poll(
+        group_name="fast_group",
+        t_request_mono=100.0,
+        t_response_mono=100.010,
+        t_ingest_mono=100.015,
+        t_request_iso="2026-10-12T00:00:00Z",
+        t_response_iso="2026-10-12T00:00:00Z",
+        t_ingest_iso="2026-10-12T00:00:00Z",
+    )
+    assert hasattr(rec, "data_age_ms")
+    assert pytest.approx(rec.data_age_ms, 0.1) == 15.0
+
+
 def test_safe_control_allowlist_configuration():
     """Ensure only explicitly allowlisted commands can be executed."""
     assert len(safe_control_service.allowlist) > 0

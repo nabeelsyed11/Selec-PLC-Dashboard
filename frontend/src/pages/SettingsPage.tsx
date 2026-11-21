@@ -132,8 +132,14 @@ export const SettingsPage: React.FC<Props> = ({ telemetry }) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
       });
-      const data = await res.json();
-      if (res.ok) {
+      let data: any = {};
+      try {
+        data = await res.json();
+      } catch {
+        const text = await res.text().catch(() => "");
+        data = { detail: text || `Server returned HTTP ${res.status}` };
+      }
+      if (res.ok && data.success !== false) {
         setSaveStatus({
           success: true,
           message: data.message || "Configuration successfully saved and applied!",
@@ -145,7 +151,7 @@ export const SettingsPage: React.FC<Props> = ({ telemetry }) => {
       } else {
         setSaveStatus({
           success: false,
-          message: data.detail || "Failed to update configuration",
+          message: data.detail || data.message || "Failed to update configuration",
         });
       }
     } catch (err: any) {

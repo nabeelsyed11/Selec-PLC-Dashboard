@@ -166,7 +166,7 @@ def on_modbus_measurements(measurements: Dict[str, Any]):
                 "modbus_rtt_ms": rec.modbus_rtt_ms,
                 "ingestion_delay_ms": rec.ingestion_delay_ms,
                 "publish_delay_ms": rec.publish_delay_ms,
-                "data_age_ms": rec.data_age_ms,
+                "data_age_ms": getattr(rec, "data_age_ms", rec.modbus_rtt_ms),
                 "t_request_iso": rec.t_request_iso,
                 "t_response_iso": rec.t_response_iso,
                 "t_ingest_iso": rec.t_ingest_iso,

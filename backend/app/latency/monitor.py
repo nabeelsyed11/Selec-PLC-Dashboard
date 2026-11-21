@@ -64,6 +64,11 @@ class LatencyRecord:
             return None
         return max(0.0, (self.t_render_mono - self.t_response_mono) * 1000.0)
 
+    @property
+    def data_age_ms(self) -> float:
+        """Data age from Modbus request initiation to server ingestion."""
+        return max(0.0, (self.t_ingest_mono - self.t_request_mono) * 1000.0)
+
 
 class LatencyWindow:
     """Maintains a bounded sliding window of observations to calculate statistical percentiles."""
