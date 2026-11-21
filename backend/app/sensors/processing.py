@@ -104,20 +104,25 @@ class SensorDataProcessor:
         if dt <= 0.001:
             return self.current_rpm, self.current_belt_speed_mps
 
-        # Rollover check
+        # Rollover check vs counter reset check
         if raw_count >= self.last_encoder_raw:
             delta_pulses = raw_count - self.last_encoder_raw
         else:
-            # Rollover occurred
-            delta_pulses = (self.encoder_cfg.max_count - self.last_encoder_raw) + raw_count + 1
+            # Genuine rollover only occurs when last_encoder_raw was near max_count (4294967295)
+            # If last_encoder_raw dropped due to counter reset or failed read returning 0,
+            # treating as rollover calculates billions of pulses.
+            if self.last_encoder_raw > (self.encoder_cfg.max_count - 100000):
+                delta_pulses = (self.encoder_cfg.max_count - self.last_encoder_raw) + raw_count + 1
+            else:
+                delta_pulses = 0
 
         self.last_encoder_raw = raw_count
         self.last_encoder_mono = now_mono
 
         # Pulses per second
         pulses_per_sec = delta_pulses / dt
-        # Roller RPM = (pulses_per_sec / pulses_per_rev) * 60
-        roller_rpm = (pulses_per_sec / self.encoder_cfg.pulses_per_rev) * 60.0
+        # Roller RPM = (pulses_per_sec / pulses_per_rev) * 60, clamped to reasonable industrial limit
+        roller_rpm = min(10000.0, max(0.0, (pulses_per_sec / self.encoder_cfg.pulses_per_rev) * 60.0))
         # Motor RPM = roller_rpm * gear_ratio
         motor_rpm = roller_rpm * self.encoder_cfg.gear_ratio
 

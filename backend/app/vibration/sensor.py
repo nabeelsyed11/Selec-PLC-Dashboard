@@ -317,10 +317,11 @@ class VibrationAcquisitionEngine:
 
     async def stop(self):
         self._running = False
-        if self._sample_task:
-            self._sample_task.cancel()
-        if self._calc_task:
-            self._calc_task.cancel()
+        tasks = [t for t in [self._sample_task, self._calc_task] if t is not None]
+        for t in tasks:
+            t.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         self.driver.close()
 
     async def _sampling_worker(self):

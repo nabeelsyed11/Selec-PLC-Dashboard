@@ -53,6 +53,7 @@ class AppState:
         self.simulated_server: Optional[SimulatedModbusServer] = None
         self.broadcast_task: Optional[asyncio.Task] = None
         self.physics_task: Optional[asyncio.Task] = None
+        self.prune_task: Optional[asyncio.Task] = None
 
         self.cycles_telemetry: Dict[str, Dict[str, Any]] = {
             "cycle_1": {
@@ -62,7 +63,11 @@ class AppState:
                 "modbus_coil": 514,
                 "active": False,
                 "trigger_delay_ms": None,
+                "delay_ms": 0.0,
                 "last_pressed_at": None,
+                "duration_sec": 0.0,
+                "last_duration_sec": None,
+                "start_mono": None,
             },
             "cycle_2": {
                 "cycle_num": 2,
@@ -71,7 +76,11 @@ class AppState:
                 "modbus_coil": 515,
                 "active": False,
                 "trigger_delay_ms": None,
+                "delay_ms": 0.0,
                 "last_pressed_at": None,
+                "duration_sec": 0.0,
+                "last_duration_sec": None,
+                "start_mono": None,
             },
             "cycle_3": {
                 "cycle_num": 3,
@@ -80,7 +89,11 @@ class AppState:
                 "modbus_coil": 516,
                 "active": False,
                 "trigger_delay_ms": None,
+                "delay_ms": 0.0,
                 "last_pressed_at": None,
+                "duration_sec": 0.0,
+                "last_duration_sec": None,
+                "start_mono": None,
             },
             "cycle_4": {
                 "cycle_num": 4,
@@ -89,7 +102,11 @@ class AppState:
                 "modbus_coil": 517,
                 "active": False,
                 "trigger_delay_ms": None,
+                "delay_ms": 0.0,
                 "last_pressed_at": None,
+                "duration_sec": 0.0,
+                "last_duration_sec": None,
+                "start_mono": None,
             },
         }
 
@@ -125,45 +142,51 @@ def on_modbus_measurements(measurements: Dict[str, Any]):
     """
     t_ingest_mono = time.perf_counter()
     t_ingest_iso = datetime.now(timezone.utc).isoformat()
+    recorded_latency_groups = set()
 
     for name, meas in measurements.items():
-        # Record latency observation per group
         grp = meas.get("group", "fast_group")
-        rec = latency_subsystem.record_poll(
-            group_name=grp,
-            t_request_mono=meas["t_request_mono"],
-            t_response_mono=meas["t_response_mono"],
-            t_ingest_mono=t_ingest_mono,
-            t_request_iso=meas["t_request"],
-            t_response_iso=meas["t_response"],
-            t_ingest_iso=t_ingest_iso,
-        )
 
-        # Buffer latency record
-        db_buffer.add_latency({
-            "group_name": grp,
-            "modbus_rtt_ms": rec.modbus_rtt_ms,
-            "ingestion_delay_ms": rec.ingestion_delay_ms,
-            "publish_delay_ms": rec.publish_delay_ms,
-            "data_age_ms": rec.modbus_rtt_ms,
-            "t_request_iso": rec.t_request_iso,
-            "t_response_iso": rec.t_response_iso,
-            "t_ingest_iso": rec.t_ingest_iso,
-            "timestamp_utc": datetime.now(timezone.utc),
-        })
+        # Record group latency observation ONCE per group per poll (prevents stats duplication & database bloat)
+        if grp not in recorded_latency_groups and meas.get("t_request_mono") is not None and meas.get("t_response_mono") is not None:
+            rec = latency_subsystem.record_poll(
+                group_name=grp,
+                t_request_mono=meas["t_request_mono"],
+                t_response_mono=meas["t_response_mono"],
+                t_ingest_mono=t_ingest_mono,
+                t_request_iso=meas.get("t_request") or t_ingest_iso,
+                t_response_iso=meas.get("t_response") or t_ingest_iso,
+                t_ingest_iso=t_ingest_iso,
+            )
+            recorded_latency_groups.add(grp)
+
+            # Buffer latency record
+            db_buffer.add_latency({
+                "group_name": grp,
+                "modbus_rtt_ms": rec.modbus_rtt_ms,
+                "ingestion_delay_ms": rec.ingestion_delay_ms,
+                "publish_delay_ms": rec.publish_delay_ms,
+                "data_age_ms": rec.data_age_ms,
+                "t_request_iso": rec.t_request_iso,
+                "t_response_iso": rec.t_response_iso,
+                "t_ingest_iso": rec.t_ingest_iso,
+                "timestamp_utc": datetime.now(timezone.utc),
+            })
 
         # Process specific signals
         if name == "load_cell_weight":
             meas["value"] = app_state.sensor_processor.process_load_cell(meas["raw_value"])
         elif name == "motor_temperature":
-            temp_c = meas["value"]
-            active, sev = app_state.sensor_processor.process_temperature(temp_c)
-            if active:
-                alarms_manager.trigger_alarm(
-                    "MOTOR_HIGH_TEMP", sev, f"Motor temperature elevated: {temp_c:.1f} °C (Threshold: 75°C)"
-                )
-            elif sev == "CLEARED":
-                alarms_manager.clear_alarm("MOTOR_HIGH_TEMP")
+            # Only evaluate alarm state if measurement is valid/simulated to prevent comms glitch from silencing alarm
+            if meas.get("quality") in ("VALID", "SIMULATED"):
+                temp_c = float(meas["value"])
+                active, sev = app_state.sensor_processor.process_temperature(temp_c)
+                if active:
+                    alarms_manager.trigger_alarm(
+                        "MOTOR_HIGH_TEMP", sev, f"Motor temperature elevated: {temp_c:.1f} °C (Threshold: 75°C)"
+                    )
+                elif sev == "CLEARED":
+                    alarms_manager.clear_alarm("MOTOR_HIGH_TEMP")
         elif name == "encoder_raw_count":
             rpm, speed = app_state.sensor_processor.process_encoder(int(meas["raw_value"]))
             app_state.signals_snapshot["encoder_roller_rpm"] = {
@@ -213,6 +236,7 @@ def on_modbus_measurements(measurements: Dict[str, Any]):
         ("cycle_4", "cycle_4_mx5"),
     ]
     now_iso = datetime.now(timezone.utc).strftime("%H:%M:%S")
+    now_mono = time.perf_counter()
 
     for cycle_key, sig_name in cycle_mappings:
         sig = app_state.signals_snapshot.get(sig_name)
@@ -225,13 +249,23 @@ def on_modbus_measurements(measurements: Dict[str, Any]):
                 if fast_g and fast_g.last_rtt_ms > 0.0:
                     rtt = round(float(fast_g.last_rtt_ms), 1)
 
-            # RISING EDGE: Captured ONLY at the exact moment the input is pressed / triggered
+            c_data["delay_ms"] = rtt
+
+            # RISING EDGE: Captured when the cycle turns ON
             if is_active and not c_data["active"]:
                 c_data["active"] = True
                 c_data["last_pressed_at"] = now_iso
                 c_data["trigger_delay_ms"] = rtt
+                c_data["start_mono"] = now_mono
+                c_data["duration_sec"] = 0.0
+            # FALLING EDGE: Captured when the cycle turns OFF
             elif not is_active and c_data["active"]:
                 c_data["active"] = False
+                if c_data.get("start_mono"):
+                    c_data["last_duration_sec"] = round(now_mono - c_data["start_mono"], 1)
+                c_data["start_mono"] = None
+            elif is_active and c_data.get("start_mono"):
+                c_data["duration_sec"] = round(now_mono - c_data["start_mono"], 1)
 
     # Update overall machine state
     e_stop = app_state.signals_snapshot.get("emergency_stop_ok", {}).get("value", 1) == 1
@@ -277,6 +311,12 @@ async def websocket_broadcast_loop():
             if ws_manager.active_connections:
                 is_sim = app_state.modbus_client.simulation_mode
                 is_conn = app_state.modbus_client.diagnostics.connected
+
+                # Tick active cycle durations live at 10 Hz
+                now_mono = time.perf_counter()
+                for c_data in app_state.cycles_telemetry.values():
+                    if c_data.get("active") and c_data.get("start_mono"):
+                        c_data["duration_sec"] = round(now_mono - c_data["start_mono"], 1)
 
                 # Strict state management when physical mode is active
                 if not is_sim:
@@ -357,6 +397,8 @@ def stop_physics_task():
 async def lifespan(app: FastAPI):
     """Application startup and graceful shutdown."""
     logger.info("Initializing Selec MiBRX-6M Industrial IoT Gateway backend...")
+    # Synchronize simulation mode from active settings
+    app_state.modbus_client.simulation_mode = settings.SIMULATION_MODE
     await init_db()
     await db_buffer.start()
 
@@ -375,14 +417,35 @@ async def lifespan(app: FastAPI):
     # Start WebSocket broadcaster
     app_state.broadcast_task = asyncio.create_task(websocket_broadcast_loop())
 
+    # Start periodic database pruning loop (hourly)
+    async def periodic_prune_loop():
+        while True:
+            try:
+                await asyncio.sleep(3600)  # Every 1 hour
+                await db_buffer.prune_old_data(settings.DATA_RETENTION_HOURS)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in database prune loop: {e}")
+
+    app_state.prune_task = asyncio.create_task(periodic_prune_loop())
+
     yield
 
     # Graceful shutdown
     logger.info("Shutting down Industrial IoT Gateway...")
-    if app_state.broadcast_task:
-        app_state.broadcast_task.cancel()
-    if app_state.physics_task:
-        app_state.physics_task.cancel()
+    tasks_to_cancel = [
+        t for t in [
+            app_state.broadcast_task,
+            app_state.physics_task,
+            app_state.prune_task,
+        ] if t is not None
+    ]
+    for t in tasks_to_cancel:
+        t.cancel()
+    if tasks_to_cancel:
+        await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+
     await app_state.modbus_client.disconnect()
     await vibration_engine.stop()
     await db_buffer.stop()
@@ -396,12 +459,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS configuration
+# CORS configuration - allow_credentials must be False when allow_origins is wildcard
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -450,7 +513,12 @@ if frontend_dist.is_dir():
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        file_path = frontend_dist / full_path
-        if file_path.is_file():
-            return FileResponse(str(file_path))
+        try:
+            # Prevent directory traversal attacks: ensure file resolves strictly within frontend_dist
+            safe_dist = frontend_dist.resolve()
+            resolved = (frontend_dist / full_path).resolve()
+            if resolved.is_relative_to(safe_dist) and resolved.is_file():
+                return FileResponse(str(resolved))
+        except (ValueError, Exception):
+            pass
         return FileResponse(str(frontend_dist / "index.html"))

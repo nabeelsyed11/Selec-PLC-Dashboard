@@ -160,9 +160,24 @@ class SafeControlService:
             )
             return {"success": False, "status": "MODBUS_ERROR", "message": write_msg}
 
-        # Step 6: Readback verification
-        readback_verified = True
-        readback_val = target_value
+        # Step 6: Real readback verification from PLC or simulator
+        readback_verified = False
+        readback_val = None
+        try:
+            if entry.function_code == 5:  # Single Coil
+                bits = await modbus_client._read_coils(entry.address, 1)
+                if bits:
+                    readback_val = 1 if bits[0] else 0
+                    expected_bit = 1 if bool(target_value) else 0
+                    readback_verified = (readback_val == expected_bit)
+            elif entry.function_code == 6:  # Holding Register
+                regs = await modbus_client._read_registers(entry.address, 1, function_code=3)
+                if regs:
+                    readback_val = regs[0]
+                    readback_verified = (readback_val == int(target_value))
+        except Exception as e:
+            logger.warning(f"Readback verification query failed for {command_name} at address {entry.address}: {e}")
+            readback_verified = False
 
         # Step 7: Record immutable audit log
         await self._record_audit(

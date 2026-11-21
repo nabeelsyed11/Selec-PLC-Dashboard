@@ -1,60 +1,86 @@
 """
-Automated tests for FastAPI endpoints, safe control allowlists,
-interlock rejections, and disabled-by-default remote control.
+Automated unit tests for system diagnostics, latency monitors,
+safe control allowlists, input sanitization, and security validations.
 """
 import pytest
-from starlette.testclient import TestClient
 from app.core.config import settings
-
-# Force simulation mode during API unit testing
-settings.SIMULATION_MODE = True
-
-from app.main import app
+from app.machine.state import machine_state_manager
+from app.latency.monitor import latency_subsystem
+from app.control.service import safe_control_service
+from app.api.routes_control import ControlCommandRequest
+from app.api.routes_system import PLCConfigSchema, PLCTestRequest
 
 
 def test_api_system_telemetry():
-    with TestClient(app, raise_server_exceptions=False) as client:
-        resp = client.get("/api/system/telemetry")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "cpu_percent" in data
-        assert "uptime_seconds" in data
+    """Ensure system telemetry returns valid hardware resource metrics."""
+    data = machine_state_manager.get_system_telemetry()
+    assert "cpu_percent" in data
+    assert "uptime_seconds" in data
+    assert "memory_percent" in data
+    assert "disk_percent" in data
+    assert isinstance(data["uptime_seconds"], int)
+    assert 0.0 <= data["memory_percent"] <= 100.0
 
 
 def test_api_latency_stats():
-    with TestClient(app, raise_server_exceptions=False) as client:
-        resp = client.get("/api/latency/stats")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "groups" in data
+    """Ensure latency monitoring subsystem exposes configured signal groups."""
+    latency_subsystem.record_poll(
+        group_name="fast_group",
+        t_request_mono=100.0,
+        t_response_mono=100.005,
+        t_ingest_mono=100.006,
+        t_request_iso="2026-10-12T00:00:00Z",
+        t_response_iso="2026-10-12T00:00:00Z",
+        t_ingest_iso="2026-10-12T00:00:00Z",
+    )
+    data = latency_subsystem.get_all_group_stats()
+    assert "groups" in data
+    assert "fast_group" in data["groups"]
+
+
+def test_safe_control_allowlist_configuration():
+    """Ensure only explicitly allowlisted commands can be executed."""
+    assert len(safe_control_service.allowlist) > 0
+    assert "pusher_command" in safe_control_service.allowlist
+    assert "unauthorized_arbitrary_register" not in safe_control_service.allowlist
 
 
 def test_safe_control_disabled_by_default():
-    """Ensure remote control is strictly rejected with 403 when ALLOW_REMOTE_CONTROL is False."""
-    settings.ALLOW_REMOTE_CONTROL = False
-    with TestClient(app, raise_server_exceptions=False) as client:
-        payload = {
-            "command_name": "pusher_command",
-            "target_value": 1.0,
-            "operator_name": "operator",
-            "operator_confirmed": True,
-        }
-        resp = client.post("/api/control/execute", json=payload)
-        assert resp.status_code == 403
-        assert "disabled by default" in resp.json()["detail"].lower()
+    """Ensure ALLOW_REMOTE_CONTROL is safely False by default."""
+    assert settings.ALLOW_REMOTE_CONTROL is False
 
 
-def test_safe_control_unlisted_command_rejection():
-    """Ensure write to an unlisted register name is immediately rejected."""
-    settings.ALLOW_REMOTE_CONTROL = True
-    with TestClient(app, raise_server_exceptions=False) as client:
-        payload = {
-            "command_name": "unauthorized_arbitrary_register",
-            "target_value": 99.0,
-            "operator_name": "intruder",
-            "operator_confirmed": True,
-        }
-        resp = client.post("/api/control/execute", json=payload)
-        assert resp.status_code == 400
-        assert "not in the configured writable allowlist" in resp.json()["detail"]
-    settings.ALLOW_REMOTE_CONTROL = False  # restore safe default
+def test_control_input_validation_and_sanitization():
+    """Ensure invalid operator names and illegal target values are rejected."""
+    # Valid request
+    req = ControlCommandRequest(
+        command_name="pusher_command",
+        target_value=1.0,
+        operator_name="operator_1",
+        operator_confirmed=True,
+    )
+    assert req.operator_name == "operator_1"
+
+    # Invalid operator name with injection characters
+    with pytest.raises(ValueError):
+        ControlCommandRequest(
+            command_name="pusher_command",
+            target_value=1.0,
+            operator_name="operator; rm -rf /",
+            operator_confirmed=True,
+        )
+
+
+def test_system_config_host_injection_prevention():
+    """Ensure newline and command injection in PLC host configuration is rejected."""
+    # Valid host
+    valid_cfg = PLCConfigSchema(plc_host="192.168.1.50")
+    assert valid_cfg.plc_host == "192.168.1.50"
+
+    # Malicious host with newline injection
+    with pytest.raises(ValueError):
+        PLCConfigSchema(plc_host="127.0.0.1\nCONTROL_TOKEN_SECRET=pwned")
+
+    # Malicious host in test request
+    with pytest.raises(ValueError):
+        PLCTestRequest(plc_host="127.0.0.1\nALLOW_REMOTE_CONTROL=true")

@@ -2,8 +2,10 @@
 Safe Machine Remote Control API Endpoints.
 Enforces allowlist check, interlock verification, confirmation modal, and audit logs.
 """
+import math
+import re
 from fastapi import APIRouter, Request, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import Dict, Any, List, Optional
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,12 +17,22 @@ from app.core.config import settings
 
 router = APIRouter(prefix="/api/control", tags=["Control"])
 
+OPERATOR_REGEX = re.compile(r"^[a-zA-Z0-9_\- ]{1,32}$")
+
 
 class ControlCommandRequest(BaseModel):
     command_name: str
     target_value: float
-    operator_name: str = "operator"
+    operator_name: str = Field("operator", max_length=32)
     operator_confirmed: bool = False
+
+    @field_validator("operator_name")
+    @classmethod
+    def validate_operator(cls, v: str) -> str:
+        cleaned = v.strip()
+        if not cleaned or not OPERATOR_REGEX.match(cleaned):
+            raise ValueError("Operator name must be 1-32 alphanumeric characters.")
+        return cleaned
 
 
 @router.get("/allowlist")
@@ -48,6 +60,23 @@ async def get_writable_allowlist():
 async def execute_command(req: ControlCommandRequest, request: Request):
     """Executes validated, allowlisted remote control request."""
     from app.main import app_state
+
+    # 1. Enforce finite target value
+    if math.isnan(req.target_value) or math.isinf(req.target_value):
+        raise HTTPException(status_code=400, detail="Target value must be a valid, finite number.")
+
+    # 2. Enforce global remote control policy
+    if not settings.ALLOW_REMOTE_CONTROL:
+        raise HTTPException(
+            status_code=403,
+            detail="Remote machine control is disabled by default (ALLOW_REMOTE_CONTROL=false).",
+        )
+
+    # 3. Validate control token if custom secret is configured
+    if settings.CONTROL_TOKEN_SECRET and settings.CONTROL_TOKEN_SECRET not in ("default-insecure-dev-key-change-in-production", "change-this-in-production-to-a-secure-random-key-64chars"):
+        token = request.headers.get("X-Control-Token")
+        if token != settings.CONTROL_TOKEN_SECRET:
+            raise HTTPException(status_code=401, detail="Unauthorized: Invalid or missing X-Control-Token header.")
 
     client_ip = request.client.host if request.client else "127.0.0.1"
 

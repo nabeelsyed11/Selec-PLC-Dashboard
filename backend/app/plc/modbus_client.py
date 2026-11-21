@@ -484,7 +484,7 @@ class SelecModbusClient:
         return chunks
 
     async def _read_coils(self, address: int, count: int) -> List[bool]:
-        """Low-level read coils FC 01 with fallback to Read Discrete Inputs FC 02."""
+        """Low-level read coils FC 01."""
         if not self.simulation_mode and not (self.client and getattr(self.client, "connected", False)):
             await self.connect()
 
@@ -492,27 +492,6 @@ class SelecModbusClient:
             async with self.io_lock:
                 resp = await call_modbus(self.client.read_coils, address=address, count=count, unit_id=self.unit_id)
                 if resp.isError() or not hasattr(resp, "bits"):
-                    # Attempt address - 1 (1-based to 0-based offset tolerance)
-                    try:
-                        resp_adj = await call_modbus(self.client.read_coils, address=max(0, address - 1), count=count, unit_id=self.unit_id)
-                        if not resp_adj.isError() and hasattr(resp_adj, "bits"):
-                            return resp_adj.bits[:count]
-                    except Exception:
-                        pass
-                    # Attempt address + 1
-                    try:
-                        resp_adj2 = await call_modbus(self.client.read_coils, address=address + 1, count=count, unit_id=self.unit_id)
-                        if not resp_adj2.isError() and hasattr(resp_adj2, "bits"):
-                            return resp_adj2.bits[:count]
-                    except Exception:
-                        pass
-                    # Attempt fallback to Discrete Inputs FC 02
-                    try:
-                        resp_di = await call_modbus(self.client.read_discrete_inputs, address=address, count=count, unit_id=self.unit_id)
-                        if not resp_di.isError() and hasattr(resp_di, "bits"):
-                            return resp_di.bits[:count]
-                    except Exception:
-                        pass
                     raise ModbusException(f"Modbus error reading coils at {address}: {resp}")
                 return resp.bits[:count]
 
@@ -522,22 +501,15 @@ class SelecModbusClient:
         raise ModbusException(f"PLC not connected at {self.host}:{self.port}")
 
     async def _read_discrete_inputs(self, address: int, count: int) -> List[bool]:
-        """Low-level read discrete inputs FC 02 with fallback to Read Coils FC 01."""
+        """Low-level read discrete inputs FC 02."""
         if not self.simulation_mode and not (self.client and getattr(self.client, "connected", False)):
             await self.connect()
 
         if self.client and getattr(self.client, "connected", False):
             async with self.io_lock:
                 resp = await call_modbus(self.client.read_discrete_inputs, address=address, count=count, unit_id=self.unit_id)
-                if resp.isError():
-                    # Attempt fallback to Read Coils (FC 01) - common on Selec PLCs
-                    try:
-                        resp_coils = await call_modbus(self.client.read_coils, address=address, count=count, unit_id=self.unit_id)
-                        if not resp_coils.isError() and hasattr(resp_coils, "bits"):
-                            return resp_coils.bits[:count]
-                    except Exception:
-                        pass
-                    raise ModbusException(f"Modbus error reading discrete inputs: {resp}")
+                if resp.isError() or not hasattr(resp, "bits"):
+                    raise ModbusException(f"Modbus error reading discrete inputs at {address}: {resp}")
                 return resp.bits[:count]
 
         # ONLY simulate if explicitly in simulation mode!
@@ -547,7 +519,7 @@ class SelecModbusClient:
         raise ModbusException(f"PLC not connected at {self.host}:{self.port}")
 
     async def _read_registers(self, address: int, count: int, function_code: int = 3) -> List[int]:
-        """Low-level register reader supporting FC 03 (Holding) and FC 04 (Input) with mutual fallback."""
+        """Low-level register reader supporting FC 03 (Holding) and FC 04 (Input) with fallback at exact address."""
         if not self.simulation_mode and not (self.client and getattr(self.client, "connected", False)):
             await self.connect()
 
@@ -558,29 +530,13 @@ class SelecModbusClient:
 
                 resp = await call_modbus(primary_fn, address=address, count=count, unit_id=self.unit_id)
                 if resp.isError() or not hasattr(resp, "registers"):
-                    # Fallback 1: try secondary function code at same address
+                    # Fallback: try secondary function code at exact same address
                     try:
                         resp_sec = await call_modbus(secondary_fn, address=address, count=count, unit_id=self.unit_id)
                         if not resp_sec.isError() and hasattr(resp_sec, "registers"):
                             return resp_sec.registers[:count]
                     except Exception:
                         pass
-                    # Fallback 2: try 1-based offset tolerance (address - 1)
-                    for fn in (primary_fn, secondary_fn):
-                        try:
-                            resp_adj = await call_modbus(fn, address=max(0, address - 1), count=count, unit_id=self.unit_id)
-                            if not resp_adj.isError() and hasattr(resp_adj, "registers"):
-                                return resp_adj.registers[:count]
-                        except Exception:
-                            pass
-                    # Fallback 3: try 0-based offset tolerance (address + 1)
-                    for fn in (primary_fn, secondary_fn):
-                        try:
-                            resp_adj2 = await call_modbus(fn, address=address + 1, count=count, unit_id=self.unit_id)
-                            if not resp_adj2.isError() and hasattr(resp_adj2, "registers"):
-                                return resp_adj2.registers[:count]
-                        except Exception:
-                            pass
                     raise ModbusException(f"Modbus error reading registers at {address}: {resp}")
                 return resp.registers[:count]
 
@@ -664,13 +620,18 @@ class SelecModbusClient:
         if not entry:
             return False, f"SECURITY VIOLATION: Address {address} (FC 05) is not in the writable allowlist!"
 
+        # Enforce physical connection when not in simulation mode
+        if self.simulation_mode:
+            global_mock_plc.write_coil(address, value)
+            return True, f"Successfully wrote coil {address} -> {value} (Simulation Mode)"
+
+        if not (self.client and getattr(self.client, "connected", False)):
+            return False, f"PLC disconnected at {self.host}:{self.port}. Cannot write coil {address} to physical hardware."
+
         try:
-            if self.client and self.client.connected:
-                resp = await call_modbus(self.client.write_coil, address=address, value=value, unit_id=self.unit_id)
-                if resp.isError():
-                    return False, f"Modbus write coil error: {resp}"
-            else:
-                global_mock_plc.write_coil(address, value)
+            resp = await call_modbus(self.client.write_coil, address=address, value=value, unit_id=self.unit_id)
+            if resp.isError():
+                return False, f"Modbus write coil error: {resp}"
             return True, f"Successfully wrote coil {address} -> {value}"
         except Exception as e:
             return False, f"Exception writing coil {address}: {e}"
@@ -689,14 +650,19 @@ class SelecModbusClient:
         if entry.max_value is not None and value > entry.max_value:
             return False, f"Value {value} exceeds maximum permitted limit ({entry.max_value})"
 
+        # Enforce physical connection when not in simulation mode
+        if self.simulation_mode:
+            global_mock_plc.write_holding_register(address, value)
+            return True, f"Successfully wrote register {address} -> {value} (Simulation Mode)"
+
+        if not (self.client and getattr(self.client, "connected", False)):
+            return False, f"PLC disconnected at {self.host}:{self.port}. Cannot write register {address} to physical hardware."
+
         try:
-            if self.client and self.client.connected:
-                encoded = encode_16bit_uint(value)
-                resp = await call_modbus(self.client.write_register, address=address, value=encoded, unit_id=self.unit_id)
-                if resp.isError():
-                    return False, f"Modbus write register error: {resp}"
-            else:
-                global_mock_plc.write_holding_register(address, value)
+            encoded = encode_16bit_uint(value)
+            resp = await call_modbus(self.client.write_register, address=address, value=encoded, unit_id=self.unit_id)
+            if resp.isError():
+                return False, f"Modbus write register error: {resp}"
             return True, f"Successfully wrote register {address} -> {value}"
         except Exception as e:
             return False, f"Exception writing register {address}: {e}"

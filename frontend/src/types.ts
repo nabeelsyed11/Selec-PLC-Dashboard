@@ -21,7 +21,10 @@ export interface CycleTelemetryItem {
   modbus_coil: number;
   active: boolean;
   trigger_delay_ms?: number | null;
+  delay_ms?: number | null;
   last_pressed_at?: string | null;
+  duration_sec?: number | null;
+  last_duration_sec?: number | null;
 }
 
 export interface GroupLatencyStats {
@@ -109,7 +112,7 @@ export interface DiagnosticsPayload {
 export interface TelemetryMessage {
   type: string;
   timestamp: string;
-  machine_state: "RUNNING" | "STOPPED" | "IDLE" | "FAULTED" | "COMM_LOST" | "READY";
+  machine_state: "RUNNING" | "STOPPED" | "IDLE" | "COMM_LOST" | "READY";
   simulation_mode?: boolean;
   plc_connected?: boolean;
   plc_host?: string;

@@ -48,7 +48,12 @@ class MachineStateManager:
         uptime_sec = time.perf_counter() - self.start_time_monotonic
         cpu_pct = psutil.cpu_percent(interval=None)
         mem = psutil.virtual_memory()
-        disk = psutil.disk_usage("/")
+        try:
+            import os
+            disk_target = os.path.splitdrive(os.path.abspath("."))[0] if os.name == "nt" else "/"
+            disk = psutil.disk_usage(disk_target or ".")
+        except Exception:
+            disk = psutil.disk_usage(".")
 
         # Raspberry Pi CPU temperature (if available on Linux /sys/class/thermal)
         cpu_temp = None

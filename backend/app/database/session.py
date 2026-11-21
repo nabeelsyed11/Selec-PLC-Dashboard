@@ -10,7 +10,7 @@ from sqlalchemy import text, delete
 from datetime import datetime, timezone, timedelta
 
 from app.core.config import settings
-from app.database.models import Base, MeasurementHistoryModel, LatencyObservationModel
+from app.database.models import Base, MeasurementHistoryModel, LatencyObservationModel, AlarmRecordModel
 
 logger = logging.getLogger("database.session")
 
@@ -61,6 +61,7 @@ class DatabaseBuffer:
         self.flush_interval_sec = flush_interval_sec
         self.meas_buffer: List[Dict[str, Any]] = []
         self.latency_buffer: List[Dict[str, Any]] = []
+        self.alarm_buffer: List[Dict[str, Any]] = []
         self._lock = asyncio.Lock()
         self._flush_task: Optional[asyncio.Task] = None
         self._running = False
@@ -86,16 +87,21 @@ class DatabaseBuffer:
     def add_latency(self, latency_dict: Dict[str, Any]):
         self.latency_buffer.append(latency_dict)
 
+    def add_alarm(self, alarm_dict: Dict[str, Any]):
+        self.alarm_buffer.append(alarm_dict)
+
     async def flush_now(self):
         """Immediately commits buffered items to SQLite."""
         async with self._lock:
-            if not self.meas_buffer and not self.latency_buffer:
+            if not self.meas_buffer and not self.latency_buffer and not self.alarm_buffer:
                 return
 
             meas_to_insert = self.meas_buffer[:]
             latency_to_insert = self.latency_buffer[:]
+            alarms_to_insert = self.alarm_buffer[:]
             self.meas_buffer.clear()
             self.latency_buffer.clear()
+            self.alarm_buffer.clear()
 
         try:
             async with async_session_factory() as session:
@@ -112,9 +118,20 @@ class DatabaseBuffer:
                                 LatencyObservationModel, latency_to_insert
                             )
                         )
+                    if alarms_to_insert:
+                        await session.run_sync(
+                            lambda sync_sess: sync_sess.bulk_insert_mappings(
+                                AlarmRecordModel, alarms_to_insert
+                            )
+                        )
                 await session.commit()
         except Exception as e:
             logger.error(f"Error flushing database buffer: {e}")
+            # Re-queue on failure so transient database locks do not permanently discard data
+            async with self._lock:
+                self.meas_buffer = (meas_to_insert + self.meas_buffer)[:5000]
+                self.latency_buffer = (latency_to_insert + self.latency_buffer)[:5000]
+                self.alarm_buffer = (alarms_to_insert + self.alarm_buffer)[:500]
 
     async def _periodic_flush(self):
         while self._running:

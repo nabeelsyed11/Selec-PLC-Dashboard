@@ -8,8 +8,9 @@ from pathlib import Path
 import time
 from typing import Optional, Dict, Any
 
+import re
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pymodbus.client import AsyncModbusTcpClient
 
 from app.core.config import settings, BASE_DIR
@@ -20,54 +21,82 @@ logger = logging.getLogger("api.system")
 
 router = APIRouter(prefix="/api/system", tags=["System"])
 
+HOST_REGEX = re.compile(r"^[a-zA-Z0-9.\-_]+$")
+ALLOWED_ENV_KEYS = {"PLC_HOST", "PLC_PORT", "PLC_UNIT_ID", "SIMULATION_MODE", "PLC_TIMEOUT_SECONDS"}
+
 
 class PLCConfigSchema(BaseModel):
     plc_host: str = Field(..., description="IP address or hostname of Selec PLC (e.g. 192.168.1.50)")
-    plc_port: int = Field(502, description="Modbus TCP Port (default 502)")
-    plc_unit_id: int = Field(1, description="Modbus Slave / Unit ID (default 1)")
+    plc_port: int = Field(502, ge=1, le=65535, description="Modbus TCP Port (default 502)")
+    plc_unit_id: int = Field(1, ge=1, le=255, description="Modbus Slave / Unit ID (default 1)")
     simulation_mode: bool = Field(False, description="Enable virtual mock PLC simulation")
-    plc_timeout_seconds: float = Field(1.5, description="Socket response timeout in seconds")
+    plc_timeout_seconds: float = Field(1.5, ge=0.1, le=30.0, description="Socket response timeout in seconds")
+
+    @field_validator("plc_host")
+    @classmethod
+    def validate_host(cls, v: str) -> str:
+        cleaned = v.strip()
+        if not cleaned or not HOST_REGEX.match(cleaned):
+            raise ValueError("Invalid host/IP address format. Newlines and special characters are not permitted.")
+        return cleaned
 
 
 class PLCTestRequest(BaseModel):
     plc_host: str = Field(..., description="Target PLC IP address to test")
-    plc_port: int = Field(502, description="Target Modbus TCP Port")
-    plc_unit_id: int = Field(1, description="Target Slave ID")
-    timeout_seconds: float = Field(2.0, description="Test connection timeout")
+    plc_port: int = Field(502, ge=1, le=65535, description="Target Modbus TCP Port")
+    plc_unit_id: int = Field(1, ge=1, le=255, description="Target Slave ID")
+    timeout_seconds: float = Field(2.0, ge=0.1, le=30.0, description="Test connection timeout")
+
+    @field_validator("plc_host")
+    @classmethod
+    def validate_host(cls, v: str) -> str:
+        cleaned = v.strip()
+        if not cleaned or not HOST_REGEX.match(cleaned):
+            raise ValueError("Invalid host/IP address format. Newlines and special characters are not permitted.")
+        return cleaned
 
 
 def _update_env_file(updates: Dict[str, Any]):
-    """Persists updated configuration keys into the root .env file."""
+    """Persists sanitized configuration keys into the root .env file strictly from allowlist."""
     env_path = BASE_DIR / ".env"
     lines = []
     if env_path.exists():
         with open(env_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
+    # Filter updates to strict allowlist only
+    safe_updates = {}
+    for k, v in updates.items():
+        if k in ALLOWED_ENV_KEYS:
+            if isinstance(v, bool):
+                safe_updates[k] = "true" if v else "false"
+            else:
+                # Strip newlines, carriage returns, and control chars
+                sanitized_val = re.sub(r"[\r\n\x00-\x1f]", "", str(v)).strip()
+                safe_updates[k] = sanitized_val
+
     keys_found = set()
     new_lines = []
     for line in lines:
         stripped = line.strip()
         matched_key = None
-        for k in updates.keys():
+        for k in safe_updates.keys():
             if stripped.startswith(f"{k}=") or stripped.startswith(f"{k} ="):
                 matched_key = k
                 break
         if matched_key:
-            val = str(updates[matched_key]).lower() if isinstance(updates[matched_key], bool) else str(updates[matched_key])
-            new_lines.append(f"{matched_key}={val}\n")
+            new_lines.append(f"{matched_key}={safe_updates[matched_key]}\n")
             keys_found.add(matched_key)
         else:
             new_lines.append(line)
 
-    for k, v in updates.items():
+    for k, v in safe_updates.items():
         if k not in keys_found:
-            val = str(v).lower() if isinstance(v, bool) else str(v)
-            new_lines.append(f"{k}={val}\n")
+            new_lines.append(f"{k}={v}\n")
 
     with open(env_path, "w", encoding="utf-8") as f:
         f.writelines(new_lines)
-    logger.info(f"Updated .env file with {list(updates.keys())}")
+    logger.info(f"Updated .env file with {list(safe_updates.keys())}")
 
 
 @router.get("/telemetry")
@@ -220,10 +249,11 @@ async def test_plc_connection(req: PLCTestRequest):
             "rtt_ms": None,
         }
     finally:
-        try:
-            client.close()
-        except Exception:
-            pass
+        if not used_existing:
+            try:
+                client.close()
+            except Exception:
+                pass
 
 
 @router.post("/config")

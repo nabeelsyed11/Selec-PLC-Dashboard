@@ -38,17 +38,18 @@ async def get_signal_history(
             MeasurementHistoryModel.signal_name == signal_name,
             MeasurementHistoryModel.timestamp_utc >= cutoff,
         )
-        .order_by(MeasurementHistoryModel.timestamp_utc.asc())
+        .order_by(MeasurementHistoryModel.timestamp_utc.desc())
         .limit(1000)
     )
     result = await session.execute(stmt)
-    records = result.scalars().all()
+    records = list(result.scalars().all())
+    records.reverse()  # Chronological order for frontend charting
 
     return {
         "signal_name": signal_name,
         "points": [
             {
-                "timestamp": r.timestamp_utc.isoformat(),
+                "timestamp": r.timestamp_utc.isoformat() if r.timestamp_utc.tzinfo else r.timestamp_utc.replace(tzinfo=timezone.utc).isoformat(),
                 "value": r.value,
                 "quality": r.quality,
             }

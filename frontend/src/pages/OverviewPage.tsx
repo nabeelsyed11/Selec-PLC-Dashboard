@@ -77,12 +77,12 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
   const currentTriggerDelay = signals.load_current_id4?.trigger_delay_ms ?? signals.mains_current_td4?.trigger_delay_ms ?? signals.mains_current_a?.trigger_delay_ms ?? null;
   const pfTriggerDelay = signals.power_factor_id5?.trigger_delay_ms ?? signals.power_factor_td5?.trigger_delay_ms ?? signals.power_factor?.trigger_delay_ms ?? null;
 
-  // SCADA Cycle Telemetry with exact one-shot trigger delay when pressed
+  // SCADA Cycle Telemetry with exact one-shot trigger delay and duration timers
   const cyclesList = [
-    telemetry.cycles?.cycle_1 || { cycle_num: 1, name: "First Cycle", plc_tag: "MX2", modbus_coil: 514, active: cycle1, trigger_delay_ms: null, last_pressed_at: null },
-    telemetry.cycles?.cycle_2 || { cycle_num: 2, name: "Second Cycle", plc_tag: "MX3", modbus_coil: 515, active: cycle2, trigger_delay_ms: null, last_pressed_at: null },
-    telemetry.cycles?.cycle_3 || { cycle_num: 3, name: "Third Cycle", plc_tag: "MX4", modbus_coil: 516, active: cycle3, trigger_delay_ms: null, last_pressed_at: null },
-    telemetry.cycles?.cycle_4 || { cycle_num: 4, name: "Fourth Cycle", plc_tag: "MX5", modbus_coil: 517, active: cycle4, trigger_delay_ms: null, last_pressed_at: null },
+    telemetry.cycles?.cycle_1 || { cycle_num: 1, name: "First Cycle", plc_tag: "MX2", modbus_coil: 514, active: cycle1, trigger_delay_ms: null, delay_ms: null, last_pressed_at: null, duration_sec: 0.0, last_duration_sec: null },
+    telemetry.cycles?.cycle_2 || { cycle_num: 2, name: "Second Cycle", plc_tag: "MX3", modbus_coil: 515, active: cycle2, trigger_delay_ms: null, delay_ms: null, last_pressed_at: null, duration_sec: 0.0, last_duration_sec: null },
+    telemetry.cycles?.cycle_3 || { cycle_num: 3, name: "Third Cycle", plc_tag: "MX4", modbus_coil: 516, active: cycle3, trigger_delay_ms: null, delay_ms: null, last_pressed_at: null, duration_sec: 0.0, last_duration_sec: null },
+    telemetry.cycles?.cycle_4 || { cycle_num: 4, name: "Fourth Cycle", plc_tag: "MX5", modbus_coil: 517, active: cycle4, trigger_delay_ms: null, delay_ms: null, last_pressed_at: null, duration_sec: 0.0, last_duration_sec: null },
   ];
 
   return (
@@ -250,7 +250,15 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
                   >
                     {c.active ? "● ACTIVE" : "STANDBY"}
                   </span>
-                  {c.last_pressed_at ? (
+                  {c.active ? (
+                    <span className="mono" style={{ fontSize: "12px", fontWeight: 700, color: "#34d399" }}>
+                      ⏱ Active: {c.duration_sec != null ? `${c.duration_sec.toFixed(1)}s` : "0.0s"}
+                    </span>
+                  ) : c.last_duration_sec != null ? (
+                    <span className="mono" style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                      ⏱ Last: {c.last_duration_sec.toFixed(1)}s
+                    </span>
+                  ) : c.last_pressed_at ? (
                     <span className="mono" style={{ fontSize: "11px", color: "var(--text-muted)" }}>
                       Pressed: {c.last_pressed_at}
                     </span>
@@ -272,11 +280,15 @@ export const OverviewPage: React.FC<Props> = ({ telemetry, isConnected, renderLa
                     alignItems: "center",
                   }}
                 >
-                  <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Input Delay:</span>
+                  <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>Modbus Delay:</span>
                   <span className="mono" style={{ fontSize: "14px", fontWeight: 700, color: "var(--primary-cyan)" }}>
-                    {c.trigger_delay_ms != null && c.trigger_delay_ms > 0
-                      ? `⚡ ${c.trigger_delay_ms.toFixed(1)} ms`
-                      : "-- ms"}
+                    {c.delay_ms != null && c.delay_ms > 0
+                      ? `⚡ ${c.delay_ms.toFixed(1)} ms`
+                      : c.trigger_delay_ms != null && c.trigger_delay_ms > 0
+                        ? `⚡ ${c.trigger_delay_ms.toFixed(1)} ms`
+                        : fastLatency
+                          ? `⚡ ${fastLatency.rtt_p50_ms.toFixed(1)} ms`
+                          : "-- ms"}
                   </span>
                 </div>
               </div>
